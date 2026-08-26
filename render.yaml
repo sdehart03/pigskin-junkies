@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: pigskin-junkies
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT app:application
+    envVars:
+      - key: PIGSKIN_JUNKIES_SECRET
+        generateValue: true
+      - key: PIGSKIN_JUNKIES_COOKIE_SECURE
+        value: "1"
+      - key: PIGSKIN_JUNKIES_DB_PATH
+        value: /opt/render/project/src/pigskin_junkies.db
