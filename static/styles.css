@@ -284,6 +284,11 @@ thead th,
   border: 1px solid var(--line);
 }
 
+.button--danger {
+  background: var(--danger);
+  color: #fff;
+}
+
 .button--small {
   padding: 9px 14px;
 }
