@@ -144,7 +144,7 @@ thead th,
 .auth-controls {
   display: flex;
   justify-content: flex-end;
-  min-width: 200px;
+  position: relative;
 }
 
 .auth-chip {
@@ -163,6 +163,48 @@ thead th,
 .auth-chip__name {
   color: var(--ink);
 }
+
+.account-menu {
+  position: relative;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.account-menu summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.account-menu summary::-webkit-details-marker { display: none; }
+.account-menu__chevron { color: var(--accent); font-size: 1.2rem; line-height: 1; }
+.account-menu[open] .account-menu__chevron { transform: rotate(45deg); }
+
+.account-menu__panel {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 10px);
+  right: 0;
+  display: grid;
+  min-width: 220px;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #111827;
+  box-shadow: var(--shadow);
+}
+
+.account-menu__identity { display: grid; gap: 3px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.account-menu__identity span { color: var(--accent); font-size: 0.9rem; }
+.account-menu__panel .button { width: 100%; }
 
 .hero {
   display: grid;
@@ -869,6 +911,8 @@ tbody tr:last-child td {
     width: 100%;
     justify-content: flex-start;
   }
+
+  .account-menu__panel { right: auto; left: 0; }
 
   .site-header {
     gap: 12px;
