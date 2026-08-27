@@ -625,6 +625,22 @@ def line_values(spread_text, away_team, home_team):
     return "none", ""
 
 
+def ats_winner_for_score(game, score_away, score_home):
+    """Return the team that covered the spread, or None for an unfinished game/push."""
+    if score_away == 0 and score_home == 0:
+        return None
+    favorite_side, spread_value = line_values(game["spread_text"], game["away_team"], game["home_team"])
+    try:
+        spread = float(spread_value or 0)
+    except ValueError:
+        return None
+    adjusted_away = score_away - (spread if favorite_side == "away" else 0)
+    adjusted_home = score_home - (spread if favorite_side == "home" else 0)
+    if adjusted_away == adjusted_home:
+        return None
+    return game["away_team"] if adjusted_away > adjusted_home else game["home_team"]
+
+
 def kickoff_input_value(game):
     """Format kickoff values for the browser's date-and-time input when possible."""
     kickoff = game_kickoff(game)
@@ -1093,7 +1109,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
           </form>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Game</th><th>Matchup</th><th>Kickoff</th><th>Spread</th><th>Winner</th><th>Final score</th><th>Manage</th></tr></thead>
+              <thead><tr><th>Game</th><th>Matchup</th><th>Kickoff</th><th>Spread</th><th>ATS winner</th><th>Final score</th><th>Manage</th></tr></thead>
               <tbody>{''.join(game_rows)}</tbody>
             </table>
           </div>
@@ -1623,12 +1639,15 @@ def save_commissioner_changes(conn, form):
             (form.get(f"tb_{tb['position']}", tb["prompt"]).strip() or tb["prompt"], tb["id"]),
         )
     for game in fetch_week_games(conn, week["id"]):
+        score_away = int(form.get(f"score_away_{game['id']}", game["score_away"]) or 0)
+        score_home = int(form.get(f"score_home_{game['id']}", game["score_home"]) or 0)
+        winner = ats_winner_for_score(game, score_away, score_home) or form.get(f"winner_{game['id']}", game["winner"]) or None
         conn.execute(
             "UPDATE games SET winner = ?, score_away = ?, score_home = ? WHERE id = ?",
             (
-                form.get(f"winner_{game['id']}", game["winner"]) or None,
-                int(form.get(f"score_away_{game['id']}", game["score_away"]) or 0),
-                int(form.get(f"score_home_{game['id']}", game["score_home"]) or 0),
+                winner,
+                score_away,
+                score_home,
                 game["id"],
             ),
         )
