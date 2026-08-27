@@ -859,11 +859,16 @@ def render_layout(title, body, active, account):
 def render_home(conn, account):
     week = fetch_current_week(conn)
     games = fetch_week_games(conn, week["id"])
+    results = compute_week_results(conn, week["id"])
     open_games = [game for game in games if not is_game_locked(game)]
     next_game = open_games[0] if open_games else None
     next_lock = game_lock_label(next_game) if next_game else "All games are locked"
     next_matchup = f"{next_game['away_team']} at {next_game['home_team']}" if next_game else "The weekly card is complete"
     headline = f"{week['label']} is ready." if open_games else f"{week['label']} is underway."
+    top_three = "".join(
+        f'<a class="leader-card" href="/player?entry_id={item["entry_id"]}&week_id={week["id"]}"><strong>#{item["rank"]} {esc(item["display_name"])}</strong><span>{item["wins"]}/{item["total_games"]} correct</span></a>'
+        for item in results[:3]
+    ) or '<div class="callout">Standings will appear here as entries are submitted.</div>'
     body = f"""
       <section class="hero">
         <div class="hero__copy">
@@ -886,13 +891,10 @@ def render_home(conn, account):
 
       <section class="panel">
         <div class="section-heading">
-          <div><p class="section-label">Your weekend</p><h2>Stay in the action</h2></div>
+          <div><p class="section-label">This week</p><h2>{esc(week["label"])} leaders</h2></div>
+          <a class="button button--ghost button--small" href="/leaderboard">Full standings</a>
         </div>
-        <div class="leader-grid">
-          <a class="jump-card" href="/picks"><strong>Make your picks</strong><span>Save each entry before its games lock.</span></a>
-          <a class="jump-card" href="/leaderboard"><strong>Follow the standings</strong><span>Results update automatically as games finish.</span></a>
-          <a class="jump-card" href="/trends"><strong>See pick trends</strong><span>Find out how the field leaned once games begin.</span></a>
-        </div>
+        <div class="leader-grid">{top_three}</div>
       </section>
     """
     return render_layout("Pigskin Junkies | Home", body, "/", account)
