@@ -857,6 +857,27 @@ def render_change_password(account, error="", message=""):
     return render_layout("Pigskin Junkies | Change Password", body, "", account)
 
 
+def render_delete_account_confirmation(account, target):
+    body = f"""
+      <section class="page-hero"><div><p class="eyebrow">Account removal</p><h1>Delete {esc(target["name"])}?</h1></div></section>
+      <section class="auth-layout">
+        <article class="panel">
+          <p class="section-label">Confirmation required</p>
+          <h2>This action cannot be undone</h2>
+          <div class="alert alert--error">Deleting this account will permanently remove its entries and all submitted picks.</div>
+          <div class="summary-card"><strong>{esc(target["name"])}</strong><span>{esc(target["email"])}</span></div>
+          <form class="pick-actions" method="post" action="/commissioner/account/delete">
+            <input type="hidden" name="account_id" value="{target["id"]}" />
+            <input type="hidden" name="confirm_delete" value="yes" />
+            <button class="button button--danger" type="submit">Yes, permanently delete this account</button>
+            <a class="button button--ghost" href="/commissioner">Cancel and keep account</a>
+          </form>
+        </article>
+      </section>
+    """
+    return render_layout("Pigskin Junkies | Confirm Account Deletion", body, "/commissioner", account)
+
+
 def render_commissioner(conn, account):
     if not account:
         return None, redirect  # sentinel handled by caller
@@ -930,7 +951,7 @@ def render_commissioner(conn, account):
                   <label>New entry name<input type="text" name="display_name" placeholder="Add another entry" required /></label>
                   <button class="button button--ghost button--small" type="submit">Add entry</button>
                 </form>
-                <form class="inline-form inline-form--compact" method="post" action="/commissioner/account/delete" onsubmit="return confirm('Delete {esc(managed["name"])} and all of this account\'s entries and picks? This cannot be undone.');">
+                <form class="inline-form inline-form--compact" method="post" action="/commissioner/account/delete">
                   <input type="hidden" name="account_id" value="{managed["id"]}" />
                   <button class="button button--danger button--small" type="submit" {'disabled title="You cannot delete the account you are currently using."' if managed["id"] == account["id"] else ''}>Delete account</button>
                 </form>
@@ -1658,7 +1679,15 @@ def app(environ, start_response):
             conn.close()
             return redirect(start_response, "/picks")
         form = read_post_data(environ)
-        delete_account(conn, int(form.get("account_id") or 0), account["id"])
+        target = conn.execute("SELECT * FROM accounts WHERE id = ?", (int(form.get("account_id") or 0),)).fetchone()
+        if not target or target["id"] == account["id"]:
+            conn.close()
+            return redirect(start_response, "/commissioner")
+        if form.get("confirm_delete") != "yes":
+            body = render_delete_account_confirmation(account, target)
+            conn.close()
+            return html_response(start_response, body)
+        delete_account(conn, target["id"], account["id"])
         conn.close()
         return redirect(start_response, "/commissioner")
 
