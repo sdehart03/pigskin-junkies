@@ -858,43 +858,41 @@ def render_layout(title, body, active, account):
 
 def render_home(conn, account):
     week = fetch_current_week(conn)
-    results = compute_week_results(conn, week["id"])
-    hero_cards = [
-        ("Entries submitted", f'{sum(1 for item in results if item["submitted"])}/{len(results)}'),
-        ("Picks", "Game-by-game locks"),
-        ("Leader", f'{results[0]["display_name"]} · {results[0]["wins"]} pts' if results else "Not set"),
-    ]
-    hero = "".join(
-        f'<div class="hero__summary-item"><div class="summary-row"><span>{esc(label)}</span><strong>{esc(value)}</strong></div></div>'
-        for label, value in hero_cards
-    )
-    top_three = "".join(
-        f'<a class="leader-card" href="/player?entry_id={item["entry_id"]}&week_id={week["id"]}"><strong>#{item["rank"]} {esc(item["display_name"])}</strong><span>{item["wins"]}/{item["total_games"]} correct</span></a>'
-        for item in results[:3]
-    )
+    games = fetch_week_games(conn, week["id"])
+    open_games = [game for game in games if not is_game_locked(game)]
+    next_game = open_games[0] if open_games else None
+    next_lock = game_lock_label(next_game) if next_game else "All games are locked"
+    next_matchup = f"{next_game['away_team']} at {next_game['home_team']}" if next_game else "The weekly card is complete"
+    headline = f"{week['label']} is ready." if open_games else f"{week['label']} is underway."
     body = f"""
       <section class="hero">
         <div class="hero__copy">
           <p class="eyebrow">College football pick'em</p>
-          <h1>{esc(week["label"])} is on the board.</h1>
-          <p class="hero__lede">Make your selections, follow the board, and see where the field leans.</p>
+          <h1>{esc(headline)}</h1>
+          <p class="hero__lede">Make your picks before each kickoff, then follow the board as the weekend unfolds.</p>
           <div class="hero__actions">
-            <a class="button button--primary" href="/picks">Make picks</a>
-            <a class="button button--ghost" href="/leaderboard">View standings</a>
+            <a class="button button--primary" href="/picks">Open my pick card</a>
+            <a class="button button--ghost" href="/leaderboard">Check the board</a>
           </div>
         </div>
-        <aside class="hero__card">
-          <p class="hero__card-label">{esc(week["label"])} snapshot</p>
-          <div class="hero__summary">{hero}</div>
+        <aside class="hero__card home-week-card">
+          <p class="hero__card-label">This week</p>
+          <strong class="home-week-card__label">{esc(week["label"])}</strong>
+          <div class="home-week-card__item"><span>Next lock</span><strong>{esc(next_lock)}</strong></div>
+          <div class="home-week-card__item"><span>Matchup</span><strong>{esc(next_matchup)}</strong></div>
+          <span class="pill">{len(open_games)} games still open</span>
         </aside>
       </section>
 
       <section class="panel">
         <div class="section-heading">
-          <div><p class="section-label">Contest pulse</p><h2>Current leaders</h2></div>
-          <a class="button button--ghost button--small" href="/leaderboard">Full standings</a>
+          <div><p class="section-label">Your weekend</p><h2>Stay in the action</h2></div>
         </div>
-        <div class="leader-grid">{top_three}</div>
+        <div class="leader-grid">
+          <a class="jump-card" href="/picks"><strong>Make your picks</strong><span>Save each entry before its games lock.</span></a>
+          <a class="jump-card" href="/leaderboard"><strong>Follow the standings</strong><span>Results update automatically as games finish.</span></a>
+          <a class="jump-card" href="/trends"><strong>See pick trends</strong><span>Find out how the field leaned once games begin.</span></a>
+        </div>
       </section>
     """
     return render_layout("Pigskin Junkies | Home", body, "/", account)
