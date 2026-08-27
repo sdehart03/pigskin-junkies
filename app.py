@@ -930,6 +930,10 @@ def render_commissioner(conn, account):
                   <label>New entry name<input type="text" name="display_name" placeholder="Add another entry" required /></label>
                   <button class="button button--ghost button--small" type="submit">Add entry</button>
                 </form>
+                <form class="inline-form inline-form--compact" method="post" action="/commissioner/account/delete" onsubmit="return confirm('Delete {esc(managed["name"])} and all of this account\'s entries and picks? This cannot be undone.');">
+                  <input type="hidden" name="account_id" value="{managed["id"]}" />
+                  <button class="button button--danger button--small" type="submit" {'disabled title="You cannot delete the account you are currently using."' if managed["id"] == account["id"] else ''}>Delete account</button>
+                </form>
               </td>
             </tr>
             """
@@ -1385,6 +1389,27 @@ def update_account(conn, form):
     conn.commit()
 
 
+def delete_account(conn, account_id, acting_account_id):
+    target = conn.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    if not target or target["id"] == acting_account_id:
+        return False
+    if target["is_commissioner"]:
+        commissioner_count = conn.execute("SELECT COUNT(*) AS count FROM accounts WHERE is_commissioner = 1").fetchone()["count"]
+        if commissioner_count <= 1:
+            return False
+
+    entry_rows = conn.execute("SELECT id FROM entries WHERE account_id = ?", (account_id,)).fetchall()
+    for entry in entry_rows:
+        pick_rows = conn.execute("SELECT id FROM picks WHERE entry_id = ?", (entry["id"],)).fetchall()
+        for pick in pick_rows:
+            conn.execute("DELETE FROM pick_items WHERE pick_id = ?", (pick["id"],))
+        conn.execute("DELETE FROM picks WHERE entry_id = ?", (entry["id"],))
+    conn.execute("DELETE FROM entries WHERE account_id = ?", (account_id,))
+    conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+    conn.commit()
+    return True
+
+
 def add_entry(conn, form):
     account_id = int(form.get("account_id") or 0)
     display_name = (form.get("display_name") or "").strip()
@@ -1622,6 +1647,18 @@ def app(environ, start_response):
             conn.close()
             return redirect(start_response, "/picks")
         update_account(conn, read_post_data(environ))
+        conn.close()
+        return redirect(start_response, "/commissioner")
+
+    if path == "/commissioner/account/delete" and method == "POST":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login?next=commissioner")
+        if not account["is_commissioner"]:
+            conn.close()
+            return redirect(start_response, "/picks")
+        form = read_post_data(environ)
+        delete_account(conn, int(form.get("account_id") or 0), account["id"])
         conn.close()
         return redirect(start_response, "/commissioner")
 
