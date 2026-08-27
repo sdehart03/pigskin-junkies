@@ -837,7 +837,7 @@ def render_delete_account_confirmation(account, target):
             <input type="hidden" name="account_id" value="{target["id"]}" />
             <input type="hidden" name="confirm_delete" value="yes" />
             <button class="button button--danger" type="submit">Yes, permanently delete this account</button>
-            <a class="button button--ghost" href="/commissioner">Cancel and keep account</a>
+            <a class="button button--ghost" href="/commissioner/participants">Cancel and keep account</a>
           </form>
         </article>
       </section>
@@ -845,7 +845,7 @@ def render_delete_account_confirmation(account, target):
     return render_layout("Pigskin Junkies | Confirm Account Deletion", body, "/commissioner", account)
 
 
-def render_commissioner(conn, account):
+def render_commissioner(conn, account, section="dashboard"):
     if not account:
         return None, redirect  # sentinel handled by caller
     if not account["is_commissioner"]:
@@ -876,6 +876,7 @@ def render_commissioner(conn, account):
     for game in games:
         winner_select = (
             f'<select name="winner_{game["id"]}">'
+            f'<option value="" {"selected" if not game["winner"] else ""}>No result yet</option>'
             f'<option value="{esc(game["away_team"])}" {"selected" if game["winner"] == game["away_team"] else ""}>{esc(game["away_team"])}</option>'
             f'<option value="{esc(game["home_team"])}" {"selected" if game["winner"] == game["home_team"] else ""}>{esc(game["home_team"])}</option>'
             "</select>"
@@ -887,7 +888,7 @@ def render_commissioner(conn, account):
             f"<td>{esc(game_meta(game))}</td>"
             f"<td>{esc(game['spread_text'])}</td>"
             f"<td>{winner_select}</td>"
-            f'<td><div class="summary-row"><input type="number" min="0" name="score_away_{game["id"]}" value="{game["score_away"]}" /><input type="number" min="0" name="score_home_{game["id"]}" value="{game["score_home"]}" /></div></td>'
+            f'<td><div class="summary-row"><input class="score-input" type="number" min="0" aria-label="{esc(game["away_team"])} final score" name="score_away_{game["id"]}" value="{game["score_away"]}" /><input class="score-input" type="number" min="0" aria-label="{esc(game["home_team"])} final score" name="score_home_{game["id"]}" value="{game["score_home"]}" /></div></td>'
             "</tr>"
         )
     account_rows = []
@@ -939,18 +940,10 @@ def render_commissioner(conn, account):
             f"<td>{'Current' if listed_week['is_current'] else ''}</td>"
             "</tr>"
         )
-    body = f"""
-      <section class="page-hero">
-        <div><p class="eyebrow">Commissioner view</p><h1>Weekly setup and score control</h1></div>
-        <div class="page-hero__actions">
-          <span class="pill">{submitted_count} of {len(results)} entries received</span>
-          <span class="pill pill--accent">{'Entries are locked' if is_locked(week) else 'Entries are open'}</span>
-        </div>
-      </section>
-
-      <section class="dashboard-grid">
+    weekly_section = f"""
+      <section class="dashboard-grid commissioner-weekly-grid">
         <article class="panel">
-          <div class="section-heading"><div><p class="section-label">Weekly setup</p><h2>Week settings</h2></div></div>
+          <div class="section-heading"><div><p class="section-label">Weekly setup</p><h2>Week settings and results</h2></div></div>
           <form class="form-card" method="post" action="/commissioner/save">
             <div class="form-row">
               <label>Week label<input type="text" name="week_label" value="{esc(week['label'])}" /></label>
@@ -973,82 +966,121 @@ def render_commissioner(conn, account):
           <div class="stack compact-stack">{missing_html}</div>
         </article>
       </section>
+    """
 
-      <section class="dashboard-grid">
-        <article class="panel">
-          <div class="section-heading"><div><p class="section-label">Accounts and entries</p><h2>Participant management</h2></div></div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Entries</th><th>Manage</th></tr></thead>
-              <tbody>{''.join(account_rows)}</tbody>
-            </table>
-          </div>
-          <details class="commissioner-disclosure panel-subsection">
-            <summary>Add participant</summary>
-            <form class="form-card" method="post" action="/commissioner/account/add">
-              <div class="form-row">
-                <label>Name<input type="text" name="name" required /></label>
-                <label>Email<input type="email" name="email" required /></label>
-              </div>
-              <div class="form-row">
-                <label>Password<input type="text" name="password" required /></label>
-                <label>Primary entry name<input type="text" name="entry_one" required /></label>
-              </div>
-              <div class="form-row">
-                <label>Optional second entry<input type="text" name="entry_two" /></label>
-                <label class="checkbox-row"><input type="checkbox" name="is_commissioner" value="1" /> Commissioner account</label>
-              </div>
-              <button class="button button--primary" type="submit">Create account</button>
-            </form>
-          </details>
-          <details class="commissioner-disclosure panel-subsection">
-            <summary>Import participant list</summary>
-            <form class="form-card" method="post" action="/commissioner/account/import">
-              <div class="callout">Use columns: <code>name,email,password,entry_one,entry_two,is_commissioner</code>. Leave <code>entry_two</code> blank for single-entry participants.</div>
-              <label>CSV data
-                <textarea name="csv_data" rows="10" class="input-textarea" placeholder="name,email,password,entry_one,entry_two,is_commissioner&#10;Jane,jane@example.com,temp-pass,Jane Entry 1,Jane Entry 2,false"></textarea>
-              </label>
-              <button class="button button--ghost" type="submit">Import accounts</button>
-            </form>
-          </details>
-        </article>
-
-        <article class="panel">
-          <div class="section-heading"><div><p class="section-label">Week management</p><h2>Current and upcoming weeks</h2></div></div>
-          <form class="form-card" method="post" action="/commissioner/week/select">
-            <label>Current week
-              <select name="week_id">
-                {''.join(f'<option value="{listed_week["id"]}" {"selected" if listed_week["id"] == week["id"] else ""}>{esc(listed_week["label"])}</option>' for listed_week in weeks)}
-              </select>
-            </label>
-            <button class="button button--ghost" type="submit">Make current week</button>
+    participants_section = f"""
+      <section class="panel">
+        <div class="section-heading"><div><p class="section-label">Accounts and entries</p><h2>Participant management</h2></div></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Entries</th><th>Manage</th></tr></thead>
+            <tbody>{''.join(account_rows)}</tbody>
+          </table>
+        </div>
+        <details class="commissioner-disclosure panel-subsection">
+          <summary>Add participant</summary>
+          <form class="form-card" method="post" action="/commissioner/account/add">
+            <div class="form-row">
+              <label>Name<input type="text" name="name" required /></label>
+              <label>Email<input type="email" name="email" required /></label>
+            </div>
+            <div class="form-row">
+              <label>Password<input type="text" name="password" required /></label>
+              <label>Primary entry name<input type="text" name="entry_one" required /></label>
+            </div>
+            <div class="form-row">
+              <label>Optional second entry<input type="text" name="entry_two" /></label>
+              <label class="checkbox-row"><input type="checkbox" name="is_commissioner" value="1" /> Commissioner account</label>
+            </div>
+            <button class="button button--primary" type="submit">Create account</button>
           </form>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Week</th><th>Slug</th><th>Lock time</th><th>Status</th></tr></thead>
-              <tbody>{''.join(week_rows)}</tbody>
-            </table>
-          </div>
-          <details class="commissioner-disclosure panel-subsection">
-            <summary>Add a new contest week</summary>
-            <form class="form-card" method="post" action="/commissioner/week/add">
-              <div class="form-row">
-                <label>Week label<input type="text" name="label" placeholder="Week 2" required /></label>
-                <label>Slug<input type="text" name="slug" placeholder="week-2" required /></label>
-              </div>
-              <div class="form-row">
-                <label>Lock time<input type="datetime-local" name="lock_time" required /></label>
-                <label>Copy games and tiebreakers from current week
-                  <select name="copy_from_current">
-                    <option value="1">Yes</option>
-                    <option value="0">No</option>
-                  </select>
-                </label>
-              </div>
-              <button class="button button--primary" type="submit">Create week</button>
-            </form>
-          </details>
-        </article>
+        </details>
+        <details class="commissioner-disclosure panel-subsection">
+          <summary>Import participant list</summary>
+          <form class="form-card" method="post" action="/commissioner/account/import">
+            <div class="callout">Use columns: <code>name,email,password,entry_one,entry_two,is_commissioner</code>. Leave <code>entry_two</code> blank for single-entry participants.</div>
+            <label>CSV data
+              <textarea name="csv_data" rows="10" class="input-textarea" placeholder="name,email,password,entry_one,entry_two,is_commissioner&#10;Jane,jane@example.com,temp-pass,Jane Entry 1,Jane Entry 2,false"></textarea>
+            </label>
+            <button class="button button--ghost" type="submit">Import accounts</button>
+          </form>
+        </details>
+      </section>
+    """
+
+    weeks_section = f"""
+      <section class="panel">
+        <div class="section-heading"><div><p class="section-label">Week management</p><h2>Current and upcoming weeks</h2></div></div>
+        <form class="form-card" method="post" action="/commissioner/week/select">
+          <label>Current week
+            <select name="week_id">
+              {''.join(f'<option value="{listed_week["id"]}" {"selected" if listed_week["id"] == week["id"] else ""}>{esc(listed_week["label"])}</option>' for listed_week in weeks)}
+            </select>
+          </label>
+          <button class="button button--ghost" type="submit">Make current week</button>
+        </form>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Week</th><th>Slug</th><th>Lock time</th><th>Status</th></tr></thead>
+            <tbody>{''.join(week_rows)}</tbody>
+          </table>
+        </div>
+        <details class="commissioner-disclosure panel-subsection">
+          <summary>Add a new contest week</summary>
+          <form class="form-card" method="post" action="/commissioner/week/add">
+            <div class="form-row">
+              <label>Week label<input type="text" name="label" placeholder="Week 2" required /></label>
+              <label>Slug<input type="text" name="slug" placeholder="week-2" required /></label>
+            </div>
+            <div class="form-row">
+              <label>Lock time<input type="datetime-local" name="lock_time" required /></label>
+              <label>Copy games and tiebreakers from current week
+                <select name="copy_from_current"><option value="1">Yes</option><option value="0">No</option></select>
+              </label>
+            </div>
+            <button class="button button--primary" type="submit">Create week</button>
+          </form>
+        </details>
+      </section>
+    """
+
+    workspace_nav = """
+      <nav class="commissioner-workspace-nav" aria-label="Commissioner workspaces">
+        <a class="button button--ghost button--small" href="/commissioner">Overview</a>
+        <a class="button button--ghost button--small" href="/commissioner/weekly">Weekly setup</a>
+        <a class="button button--ghost button--small" href="/commissioner/participants">Participants</a>
+        <a class="button button--ghost button--small" href="/commissioner/weeks">Weeks</a>
+      </nav>
+    """
+
+    if section == "weekly":
+        body = f"""
+          <section class="page-hero"><div><p class="eyebrow">Commissioner workspace</p><h1>{esc(week['label'])} setup</h1></div><div class="page-hero__actions"><span class="pill">{submitted_count} of {len(results)} entries received</span><span class="pill pill--accent">{'Entries are locked' if is_locked(week) else 'Entries are open'}</span></div></section>
+          {workspace_nav}{weekly_section}
+        """
+    elif section == "participants":
+        body = f"""
+          <section class="page-hero"><div><p class="eyebrow">Commissioner workspace</p><h1>Participants and entries</h1></div><div class="page-hero__actions"><span class="pill">{len(accounts_with_entries)} accounts</span></div></section>
+          {workspace_nav}{participants_section}
+        """
+    elif section == "weeks":
+        body = f"""
+          <section class="page-hero"><div><p class="eyebrow">Commissioner workspace</p><h1>Contest weeks</h1></div><div class="page-hero__actions"><span class="pill">{len(weeks)} weeks configured</span></div></section>
+          {workspace_nav}{weeks_section}
+        """
+    else:
+        body = f"""
+      <section class="page-hero">
+        <div><p class="eyebrow">Commissioner view</p><h1>Contest control center</h1></div>
+        <div class="page-hero__actions">
+          <span class="pill">{submitted_count} of {len(results)} entries received</span>
+          <span class="pill pill--accent">{'Entries are locked' if is_locked(week) else 'Entries are open'}</span>
+        </div>
+      </section>
+      <section class="commissioner-hub">
+        <a class="commissioner-hub__card" href="/commissioner/weekly"><p class="section-label">Weekly setup</p><h2>{esc(week['label'])}</h2><span>Update lock time, tiebreakers, game results, and follow up on missing picks.</span><strong>Open weekly setup</strong></a>
+        <a class="commissioner-hub__card" href="/commissioner/participants"><p class="section-label">Participants</p><h2>{len(accounts_with_entries)} accounts</h2><span>Create, update, and organize participant accounts and their entries.</span><strong>Manage participants</strong></a>
+        <a class="commissioner-hub__card" href="/commissioner/weeks"><p class="section-label">Weeks</p><h2>{len(weeks)} configured</h2><span>Switch the active contest week or create the next one when ready.</span><strong>Manage weeks</strong></a>
       </section>
     """
     return render_layout("Pigskin Junkies | Commissioner", body, "/commissioner", account), None
@@ -1308,7 +1340,7 @@ def save_commissioner_changes(conn, form):
         conn.execute(
             "UPDATE games SET winner = ?, score_away = ?, score_home = ? WHERE id = ?",
             (
-                form.get(f"winner_{game['id']}", game["winner"]),
+                form.get(f"winner_{game['id']}", game["winner"]) or None,
                 int(form.get(f"score_away_{game['id']}", game["score_away"]) or 0),
                 int(form.get(f"score_home_{game['id']}", game["score_home"]) or 0),
                 game["id"],
@@ -1614,6 +1646,15 @@ def app(environ, start_response):
         conn.close()
         return html_response(start_response, body)
 
+    if path in {"/commissioner/weekly", "/commissioner/participants", "/commissioner/weeks"} and method == "GET":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login?next=commissioner")
+        section = path.rsplit("/", 1)[-1]
+        body, sentinel = render_commissioner(conn, account, section=section)
+        conn.close()
+        return html_response(start_response, body)
+
     if path == "/commissioner/save" and method == "POST":
         if not account:
             conn.close()
@@ -1623,7 +1664,7 @@ def app(environ, start_response):
             return redirect(start_response, "/picks")
         save_commissioner_changes(conn, read_post_data(environ))
         conn.close()
-        return redirect(start_response, "/commissioner")
+        return redirect(start_response, "/commissioner/weekly")
 
     if path == "/commissioner/account/add" and method == "POST":
         if not account:
@@ -1634,7 +1675,7 @@ def app(environ, start_response):
             return redirect(start_response, "/picks")
         create_account(conn, read_post_data(environ))
         conn.close()
-        return redirect(start_response, "/commissioner")
+        return redirect(start_response, "/commissioner/participants")
 
     if path == "/commissioner/account/update" and method == "POST":
         if not account:
@@ -1645,7 +1686,7 @@ def app(environ, start_response):
             return redirect(start_response, "/picks")
         update_account(conn, read_post_data(environ))
         conn.close()
-        return redirect(start_response, "/commissioner")
+        return redirect(start_response, "/commissioner/participants")
 
     if path == "/commissioner/account/delete" and method == "POST":
         if not account:
@@ -1658,14 +1699,14 @@ def app(environ, start_response):
         target = conn.execute("SELECT * FROM accounts WHERE id = ?", (int(form.get("account_id") or 0),)).fetchone()
         if not target or target["id"] == account["id"]:
             conn.close()
-            return redirect(start_response, "/commissioner")
+            return redirect(start_response, "/commissioner/participants")
         if form.get("confirm_delete") != "yes":
             body = render_delete_account_confirmation(account, target)
             conn.close()
             return html_response(start_response, body)
         delete_account(conn, target["id"], account["id"])
         conn.close()
-        return redirect(start_response, "/commissioner")
+        return redirect(start_response, "/commissioner/participants")
 
     if path == "/commissioner/account/import" and method == "POST":
         if not account:
@@ -1677,7 +1718,7 @@ def app(environ, start_response):
         form = read_post_data(environ)
         import_accounts_from_csv(conn, form.get("csv_data", ""))
         conn.close()
-        return redirect(start_response, "/commissioner")
+        return redirect(start_response, "/commissioner/participants")
 
     if path == "/commissioner/entry/add" and method == "POST":
         if not account:
@@ -1688,7 +1729,7 @@ def app(environ, start_response):
             return redirect(start_response, "/picks")
         add_entry(conn, read_post_data(environ))
         conn.close()
-        return redirect(start_response, "/commissioner")
+        return redirect(start_response, "/commissioner/participants")
 
     if path == "/commissioner/week/select" and method == "POST":
         if not account:
@@ -1699,7 +1740,7 @@ def app(environ, start_response):
             return redirect(start_response, "/picks")
         set_current_week(conn, read_post_data(environ))
         conn.close()
-        return redirect(start_response, "/commissioner")
+        return redirect(start_response, "/commissioner/weeks")
 
     if path == "/commissioner/week/add" and method == "POST":
         if not account:
@@ -1710,7 +1751,7 @@ def app(environ, start_response):
             return redirect(start_response, "/picks")
         create_week(conn, read_post_data(environ))
         conn.close()
-        return redirect(start_response, "/commissioner")
+        return redirect(start_response, "/commissioner/weeks")
 
     if path == "/picks" and method == "GET":
         if account:
