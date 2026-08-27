@@ -789,6 +789,9 @@ tbody tr:last-child td {
 .game-editor-group legend { padding: 0 8px; color: var(--accent); font-family: "Space Grotesk", sans-serif; font-weight: 700; }
 .game-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .game-editor-actions { display: flex; justify-content: flex-end; gap: 12px; }
+.game-editor-help { align-self: end; color: var(--muted); line-height: 1.45; }
+.game-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.game-row-actions form { margin: 0; }
 
 .game-builder-grid {
   display: grid;
