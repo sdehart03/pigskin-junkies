@@ -169,7 +169,6 @@ def init_db():
     existing = conn.execute("SELECT COUNT(*) AS count FROM accounts").fetchone()["count"]
     if existing == 0:
         seed_database(conn)
-    sync_reference_weeks(conn)
     conn.commit()
     conn.close()
 
