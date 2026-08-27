@@ -991,6 +991,27 @@ def render_delete_account_confirmation(account, target):
     return render_layout("Pigskin Junkies | Confirm Account Deletion", body, "/commissioner", account)
 
 
+def render_delete_week_confirmation(account, week):
+    body = f"""
+      <section class="page-hero"><div><p class="eyebrow">Week removal</p><h1>Delete {esc(week["label"])}?</h1></div></section>
+      <section class="auth-layout">
+        <article class="panel">
+          <p class="section-label">Confirmation required</p>
+          <h2>This action cannot be undone</h2>
+          <div class="alert alert--error">Deleting a week permanently removes its games, picks, tiebreakers, and results from the contest.</div>
+          <div class="summary-card"><strong>{esc(week["label"])}</strong><span>{esc(week["slug"])}</span></div>
+          <form class="pick-actions" method="post" action="/commissioner/week/delete">
+            <input type="hidden" name="week_id" value="{week["id"]}" />
+            <input type="hidden" name="confirm_delete" value="yes" />
+            <button class="button button--danger" type="submit">Yes, permanently delete this week</button>
+            <a class="button button--ghost" href="/commissioner/weeks">Cancel and keep week</a>
+          </form>
+        </article>
+      </section>
+    """
+    return render_layout("Pigskin Junkies | Confirm Week Deletion", body, "/commissioner", account)
+
+
 def render_commissioner(conn, account, section="dashboard", week_id=None):
     if not account:
         return None, redirect  # sentinel handled by caller
@@ -1074,12 +1095,19 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
         )
     week_rows = []
     for listed_week in weeks:
+        delete_control = (
+            '<span class="helper-copy">Current week</span>'
+            if listed_week["is_current"] else
+            f'''<form method="post" action="/commissioner/week/delete"><input type="hidden" name="week_id" value="{listed_week["id"]}" />
+              <button class="button button--danger button--small" type="submit">Delete</button></form>'''
+        )
         week_rows.append(
             "<tr>"
             f"<td>{esc(listed_week['label'])}</td>"
             f"<td>{esc(listed_week['slug'])}</td>"
             f"<td>{esc(listed_week['lock_time'])}</td>"
             f"<td>{'Current' if listed_week['is_current'] else ''}</td>"
+            f"<td>{delete_control}</td>"
             "</tr>"
         )
     next_game_number = len(games) + 1
@@ -1185,7 +1213,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
         </form>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Week</th><th>Slug</th><th>Lock time</th><th>Status</th></tr></thead>
+            <thead><tr><th>Week</th><th>Slug</th><th>Lock time</th><th>Status</th><th>Manage</th></tr></thead>
             <tbody>{''.join(week_rows)}</tbody>
           </table>
         </div>
@@ -1777,6 +1805,24 @@ def create_week(conn, form):
     conn.commit()
 
 
+def delete_week(conn, week_id):
+    week = fetch_week(conn, week_id)
+    if not week or week["is_current"]:
+        return False
+    week_count = conn.execute("SELECT COUNT(*) AS count FROM weeks").fetchone()["count"]
+    if week_count <= 1:
+        return False
+    pick_ids = [row["id"] for row in conn.execute("SELECT id FROM picks WHERE week_id = ?", (week_id,)).fetchall()]
+    for pick_id in pick_ids:
+        conn.execute("DELETE FROM pick_items WHERE pick_id = ?", (pick_id,))
+    conn.execute("DELETE FROM picks WHERE week_id = ?", (week_id,))
+    conn.execute("DELETE FROM games WHERE week_id = ?", (week_id,))
+    conn.execute("DELETE FROM tiebreakers WHERE week_id = ?", (week_id,))
+    conn.execute("DELETE FROM weeks WHERE id = ?", (week_id,))
+    conn.commit()
+    return True
+
+
 def add_game(conn, form):
     week = form_week(conn, form)
     away_team = (form.get("away_team") or "").strip()
@@ -2234,6 +2280,26 @@ def app(environ, start_response):
             conn.close()
             return redirect(start_response, "/picks")
         create_week(conn, read_post_data(environ))
+        conn.close()
+        return redirect(start_response, "/commissioner/weeks")
+
+    if path == "/commissioner/week/delete" and method == "POST":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login?next=commissioner")
+        if not account["is_commissioner"]:
+            conn.close()
+            return redirect(start_response, "/picks")
+        form = read_post_data(environ)
+        target = fetch_week(conn, form.get("week_id"))
+        if not target or target["is_current"]:
+            conn.close()
+            return redirect(start_response, "/commissioner/weeks")
+        if form.get("confirm_delete") != "yes":
+            body = render_delete_week_confirmation(account, target)
+            conn.close()
+            return html_response(start_response, body)
+        delete_week(conn, target["id"])
         conn.close()
         return redirect(start_response, "/commissioner/weeks")
 
