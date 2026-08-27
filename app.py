@@ -1240,6 +1240,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
       </section>
       <section class="commissioner-hub">
         <a class="commissioner-hub__card" href="/commissioner/weekly"><p class="section-label">Weekly setup</p><h2>{esc(week['label'])}</h2><span>Update lock time, tiebreakers, game results, and follow up on missing picks.</span><strong>Open weekly setup</strong></a>
+        <a class="commissioner-hub__card" href="/commissioner/picks"><p class="section-label">Manage picks</p><h2>{submitted_count} submitted</h2><span>Enter missing selections, make corrections, and post picks received from participants.</span><strong>Manage participant picks</strong></a>
         <a class="commissioner-hub__card" href="/commissioner/participants"><p class="section-label">Participants</p><h2>{len(accounts_with_entries)} accounts</h2><span>Create, update, and organize participant accounts and their entries.</span><strong>Manage participants</strong></a>
         <a class="commissioner-hub__card" href="/commissioner/weeks"><p class="section-label">Weeks</p><h2>{len(weeks)} configured</h2><span>Switch the active contest week or create the next one when ready.</span><strong>Manage weeks</strong></a>
       </section>
