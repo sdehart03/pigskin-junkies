@@ -794,6 +794,26 @@ tbody tr:last-child td {
   text-align: center;
 }
 
+.pick-game-card--locked,
+.breakdown-card--hidden {
+  border-color: rgba(155, 185, 255, 0.28);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.pick-lock-notice {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(90, 140, 255, 0.1);
+}
+
+.pick-lock-notice span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 @media (max-width: 1040px) {
   .hero,
   .dashboard-grid,
