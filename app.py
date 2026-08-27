@@ -714,10 +714,9 @@ def render_home(conn, account):
     week = fetch_current_week(conn)
     results = compute_week_results(conn, week["id"])
     hero_cards = [
-        ("Current week", week["label"]),
-        ("Entries in", f'{sum(1 for item in results if item["submitted"])}/{len(results)}'),
-        ("Lock state", "Locked" if is_locked(week) else "Open"),
-        ("Current leader", f'{results[0]["display_name"]} ({results[0]["wins"]})' if results else "No picks yet"),
+        ("Entries submitted", f'{sum(1 for item in results if item["submitted"])}/{len(results)}'),
+        ("Picks", "Locked" if is_locked(week) else "Open"),
+        ("Leader", f'{results[0]["display_name"]} · {results[0]["wins"]} pts' if results else "Not set"),
     ]
     hero = "".join(
         f'<div class="hero__summary-item"><div class="summary-row"><span>{esc(label)}</span><strong>{esc(value)}</strong></div></div>'
@@ -730,45 +729,24 @@ def render_home(conn, account):
     body = f"""
       <section class="hero">
         <div class="hero__copy">
-          <p class="eyebrow">Contest central</p>
-          <h1>Run Pigskin Junkies like a real site.</h1>
-          <p class="hero__lede">This version is database-backed, shared across users, and built for secure sign-in, commissioner controls, and mobile-friendly weekly picks.</p>
+          <p class="eyebrow">College football pick'em</p>
+          <h1>{esc(week["label"])} is on the board.</h1>
+          <p class="hero__lede">Make your selections, follow the board, and see where the field leans.</p>
           <div class="hero__actions">
-            <a class="button button--primary" href="/leaderboard">View Weekly Results</a>
-            <a class="button button--ghost" href="/commissioner">Open Commissioner Tools</a>
+            <a class="button button--primary" href="/picks">Make picks</a>
+            <a class="button button--ghost" href="/leaderboard">View standings</a>
           </div>
         </div>
         <aside class="hero__card">
-          <p class="hero__card-label">This week at a glance</p>
+          <p class="hero__card-label">{esc(week["label"])} snapshot</p>
           <div class="hero__summary">{hero}</div>
         </aside>
       </section>
 
-      <section class="dashboard-grid">
-        <article class="panel panel--highlight">
-          <p class="section-label">What this version fixes</p>
-          <h2>Shared data, secure sign-in, and commissioner control</h2>
-          <ul class="feature-list">
-            <li>Participants sign in before making picks</li>
-            <li>One account can manage multiple entries</li>
-            <li>Only commissioner accounts can edit games, scores, and standings</li>
-            <li>Every leaderboard name links to that entry's weekly picks</li>
-          </ul>
-        </article>
-        <article class="panel">
-          <p class="section-label">Quick links</p>
-          <div class="card-stack">
-            <a class="jump-card" href="/picks"><strong>Submit picks</strong><span>Sign in and manage your own contest entries.</span></a>
-            <a class="jump-card" href="/leaderboard"><strong>Leaderboards</strong><span>See the weekly board and season standings.</span></a>
-            <a class="jump-card" href="/trends"><strong>Pick trends</strong><span>See which sides drew the most action.</span></a>
-          </div>
-        </article>
-      </section>
-
       <section class="panel">
         <div class="section-heading">
-          <div><p class="section-label">Contest pulse</p><h2>Current top three</h2></div>
-          <a class="badge badge--link" href="/leaderboard">Open full board</a>
+          <div><p class="section-label">Contest pulse</p><h2>Current leaders</h2></div>
+          <a class="button button--ghost button--small" href="/leaderboard">Full standings</a>
         </div>
         <div class="leader-grid">{top_three}</div>
       </section>
@@ -797,28 +775,17 @@ def render_login(conn, account, error="", next_page=""):
     error_html = f'<div class="alert alert--error">{esc(error)}</div>' if error else ""
     hidden = f'<input type="hidden" name="next" value="{esc(next_page)}" />' if next_page else ""
     body = f"""
-      <section class="page-hero"><div><p class="eyebrow">Participant access</p><h1>Sign in to make your picks</h1></div></section>
-      <section class="auth-layout">
+      <section class="page-hero page-hero--compact"><div><p class="eyebrow">Pigskin Junkies</p><h1>Sign in to make your picks</h1></div></section>
+      <section class="auth-layout auth-layout--narrow">
         <article class="panel">
-          <p class="section-label">Secure your entry</p>
-          <h2>Participant sign-in</h2>
           {error_html}
           <form class="form-card" method="post" action="/login">
             {hidden}
             <label>Email<input type="email" name="email" autocomplete="username" placeholder="you@example.com" required /></label>
             <label>Password<input type="password" name="password" autocomplete="current-password" placeholder="Enter your contest password" required /></label>
-            <div class="callout">{esc(callout)}</div>
+            <div class="helper-copy">{esc(callout)}</div>
             <div class="pick-actions"><button class="button button--primary" type="submit">Sign in</button></div>
           </form>
-        </article>
-        <article class="panel">
-          <p class="section-label">Why this helps</p>
-          <h2>No more entry mixups</h2>
-          <div class="stack">
-            <div class="summary-card"><strong>One account per participant</strong><span>Entries stay tied to the signed-in account.</span></div>
-            <div class="summary-card"><strong>Multiple entries supported</strong><span>One sign-in can switch between a participant's own entries.</span></div>
-            <div class="summary-card"><strong>Commissioner tools protected</strong><span>Only commissioner accounts can edit the contest.</span></div>
-          </div>
         </article>
       </section>
     """
@@ -938,23 +905,26 @@ def render_commissioner(conn, account):
               <td>{'Commissioner' if managed["is_commissioner"] else 'Participant'}</td>
               <td><div class="entry-pill-wrap">{entries_html}</div></td>
               <td>
-                <form class="inline-form" method="post" action="/commissioner/account/update">
-                  <input type="hidden" name="account_id" value="{managed["id"]}" />
-                  <label>Name<input type="text" name="name" value="{esc(managed["name"])}" required /></label>
-                  <label>Email<input type="email" name="email" value="{esc(managed["email"])}" required /></label>
-                  <label>New password<input type="text" name="password" placeholder="Leave blank to keep current" /></label>
-                  <label class="checkbox-row"><input type="checkbox" name="is_commissioner" value="1" {'checked' if managed["is_commissioner"] else ''} /> Commissioner</label>
-                  <button class="button button--ghost button--small" type="submit">Save account</button>
-                </form>
-                <form class="inline-form inline-form--compact" method="post" action="/commissioner/entry/add">
-                  <input type="hidden" name="account_id" value="{managed["id"]}" />
-                  <label>New entry name<input type="text" name="display_name" placeholder="Add another entry" required /></label>
-                  <button class="button button--ghost button--small" type="submit">Add entry</button>
-                </form>
-                <form class="inline-form inline-form--compact" method="post" action="/commissioner/account/delete">
-                  <input type="hidden" name="account_id" value="{managed["id"]}" />
-                  <button class="button button--danger button--small" type="submit" {'disabled title="You cannot delete the account you are currently using."' if managed["id"] == account["id"] else ''}>Delete account</button>
-                </form>
+                <details class="manage-details">
+                  <summary>Manage account</summary>
+                  <form class="inline-form" method="post" action="/commissioner/account/update">
+                    <input type="hidden" name="account_id" value="{managed["id"]}" />
+                    <label>Name<input type="text" name="name" value="{esc(managed["name"])}" required /></label>
+                    <label>Email<input type="email" name="email" value="{esc(managed["email"])}" required /></label>
+                    <label>New password<input type="text" name="password" placeholder="Leave blank to keep current" /></label>
+                    <label class="checkbox-row"><input type="checkbox" name="is_commissioner" value="1" {'checked' if managed["is_commissioner"] else ''} /> Commissioner</label>
+                    <button class="button button--ghost button--small" type="submit">Save account</button>
+                  </form>
+                  <form class="inline-form inline-form--compact" method="post" action="/commissioner/entry/add">
+                    <input type="hidden" name="account_id" value="{managed["id"]}" />
+                    <label>New entry name<input type="text" name="display_name" placeholder="Add another entry" required /></label>
+                    <button class="button button--ghost button--small" type="submit">Add entry</button>
+                  </form>
+                  <form class="inline-form inline-form--compact" method="post" action="/commissioner/account/delete">
+                    <input type="hidden" name="account_id" value="{managed["id"]}" />
+                    <button class="button button--danger button--small" type="submit" {'disabled title="You cannot delete the account you are currently using."' if managed["id"] == account["id"] else ''}>Delete account</button>
+                  </form>
+                </details>
               </td>
             </tr>
             """
@@ -1013,30 +983,34 @@ def render_commissioner(conn, account):
               <tbody>{''.join(account_rows)}</tbody>
             </table>
           </div>
-          <form class="form-card panel-subsection" method="post" action="/commissioner/account/add">
-            <div class="section-heading"><div><p class="section-label">Create account</p><h2>Add participant login</h2></div></div>
-            <div class="form-row">
-              <label>Name<input type="text" name="name" required /></label>
-              <label>Email<input type="email" name="email" required /></label>
-            </div>
-            <div class="form-row">
-              <label>Password<input type="text" name="password" required /></label>
-              <label>Primary entry name<input type="text" name="entry_one" required /></label>
-            </div>
-            <div class="form-row">
-              <label>Optional second entry<input type="text" name="entry_two" /></label>
-              <label class="checkbox-row"><input type="checkbox" name="is_commissioner" value="1" /> Commissioner account</label>
-            </div>
-            <button class="button button--primary" type="submit">Create account</button>
-          </form>
-          <form class="form-card panel-subsection" method="post" action="/commissioner/account/import">
-            <div class="section-heading"><div><p class="section-label">Bulk import</p><h2>Paste participant CSV</h2></div></div>
-            <div class="callout">Use columns: <code>name,email,password,entry_one,entry_two,is_commissioner</code>. Leave <code>entry_two</code> blank for single-entry participants.</div>
-            <label>CSV data
-              <textarea name="csv_data" rows="10" class="input-textarea" placeholder="name,email,password,entry_one,entry_two,is_commissioner&#10;Jane,jane@example.com,temp-pass,Jane Entry 1,Jane Entry 2,false"></textarea>
-            </label>
-            <button class="button button--ghost" type="submit">Import accounts</button>
-          </form>
+          <details class="commissioner-disclosure panel-subsection">
+            <summary>Add participant</summary>
+            <form class="form-card" method="post" action="/commissioner/account/add">
+              <div class="form-row">
+                <label>Name<input type="text" name="name" required /></label>
+                <label>Email<input type="email" name="email" required /></label>
+              </div>
+              <div class="form-row">
+                <label>Password<input type="text" name="password" required /></label>
+                <label>Primary entry name<input type="text" name="entry_one" required /></label>
+              </div>
+              <div class="form-row">
+                <label>Optional second entry<input type="text" name="entry_two" /></label>
+                <label class="checkbox-row"><input type="checkbox" name="is_commissioner" value="1" /> Commissioner account</label>
+              </div>
+              <button class="button button--primary" type="submit">Create account</button>
+            </form>
+          </details>
+          <details class="commissioner-disclosure panel-subsection">
+            <summary>Import participant list</summary>
+            <form class="form-card" method="post" action="/commissioner/account/import">
+              <div class="callout">Use columns: <code>name,email,password,entry_one,entry_two,is_commissioner</code>. Leave <code>entry_two</code> blank for single-entry participants.</div>
+              <label>CSV data
+                <textarea name="csv_data" rows="10" class="input-textarea" placeholder="name,email,password,entry_one,entry_two,is_commissioner&#10;Jane,jane@example.com,temp-pass,Jane Entry 1,Jane Entry 2,false"></textarea>
+              </label>
+              <button class="button button--ghost" type="submit">Import accounts</button>
+            </form>
+          </details>
         </article>
 
         <article class="panel">
@@ -1055,23 +1029,25 @@ def render_commissioner(conn, account):
               <tbody>{''.join(week_rows)}</tbody>
             </table>
           </div>
-          <form class="form-card panel-subsection" method="post" action="/commissioner/week/add">
-            <div class="section-heading"><div><p class="section-label">Create week</p><h2>Add a new contest week</h2></div></div>
-            <div class="form-row">
-              <label>Week label<input type="text" name="label" placeholder="Week 2" required /></label>
-              <label>Slug<input type="text" name="slug" placeholder="week-2" required /></label>
-            </div>
-            <div class="form-row">
-              <label>Lock time<input type="datetime-local" name="lock_time" required /></label>
-              <label>Copy games and tiebreakers from current week
-                <select name="copy_from_current">
-                  <option value="1">Yes</option>
-                  <option value="0">No</option>
-                </select>
-              </label>
-            </div>
-            <button class="button button--primary" type="submit">Create week</button>
-          </form>
+          <details class="commissioner-disclosure panel-subsection">
+            <summary>Add a new contest week</summary>
+            <form class="form-card" method="post" action="/commissioner/week/add">
+              <div class="form-row">
+                <label>Week label<input type="text" name="label" placeholder="Week 2" required /></label>
+                <label>Slug<input type="text" name="slug" placeholder="week-2" required /></label>
+              </div>
+              <div class="form-row">
+                <label>Lock time<input type="datetime-local" name="lock_time" required /></label>
+                <label>Copy games and tiebreakers from current week
+                  <select name="copy_from_current">
+                    <option value="1">Yes</option>
+                    <option value="0">No</option>
+                  </select>
+                </label>
+              </div>
+              <button class="button button--primary" type="submit">Create week</button>
+            </form>
+          </details>
         </article>
       </section>
     """
