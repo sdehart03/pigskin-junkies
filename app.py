@@ -1198,6 +1198,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
       <nav class="commissioner-workspace-nav" aria-label="Commissioner workspaces">
         <a class="button button--ghost button--small" href="/commissioner">Overview</a>
         <a class="button button--ghost button--small" href="/commissioner/weekly">Weekly setup</a>
+        <a class="button button--ghost button--small" href="/commissioner/picks">Manage picks</a>
         <a class="button button--ghost button--small" href="/commissioner/participants">Participants</a>
         <a class="button button--ghost button--small" href="/commissioner/weeks">Weeks</a>
       </nav>
@@ -1244,6 +1245,53 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
       </section>
     """
     return render_layout("Pigskin Junkies | Commissioner", body, "/commissioner", account), None
+
+
+def render_commissioner_picks(conn, account, week_id=None, entry_id=None, message=""):
+    week = fetch_week(conn, week_id) or fetch_current_week(conn)
+    entries = fetch_all_entries(conn)
+    selected_entry = next((entry for entry in entries if entry["id"] == fetch_week_id(entry_id)), entries[0] if entries else None)
+    if not selected_entry:
+        body = """
+          <section class="panel empty-state"><h1>No entries available</h1><a class="button button--primary" href="/commissioner/participants">Add a participant first</a></section>
+        """
+        return render_layout("Pigskin Junkies | Manage Picks", body, "/commissioner", account)
+
+    pick, selections = fetch_pick_bundle(conn, week["id"], selected_entry["id"])
+    games = fetch_week_games(conn, week["id"])
+    tiebreakers = fetch_week_tiebreakers(conn, week["id"])
+    cards = []
+    for game in games:
+        options = "".join(
+            f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {"checked" if selections.get(game["id"]) == team else ""} required /><span>{esc(team)}</span></label>'
+            for team in (game["away_team"], game["home_team"])
+        )
+        cards.append(
+            f'<fieldset class="pick-game-card"><legend>{esc(game["code"])}: {esc(game["away_team"])} at {esc(game["home_team"])}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{options}</div></fieldset>'
+        )
+    notice = f'<div class="alert alert--success">{esc(message)}</div>' if message else ""
+    body = f"""
+      <section class="page-hero"><div><p class="eyebrow">Commissioner workspace</p><h1>Manage participant picks</h1><p class="hero__lede">Enter missing picks, correct reported mistakes, or post picks received by phone.</p></div><span class="badge">Commissioner override</span></section>
+      <nav class="commissioner-workspace-nav" aria-label="Commissioner workspaces">
+        <a class="button button--ghost button--small" href="/commissioner">Overview</a><a class="button button--ghost button--small" href="/commissioner/weekly">Weekly setup</a><a class="button button--primary button--small" href="/commissioner/picks">Manage picks</a><a class="button button--ghost button--small" href="/commissioner/participants">Participants</a><a class="button button--ghost button--small" href="/commissioner/weeks">Weeks</a>
+      </nav>
+      <form class="week-switcher" method="get" action="/commissioner/picks">
+        <label>Week<select name="week_id">{''.join(f'<option value="{listed_week["id"]}" {"selected" if listed_week["id"] == week["id"] else ""}>{esc(listed_week["label"])}</option>' for listed_week in fetch_all_weeks(conn))}</select></label>
+        <label>Participant entry<select name="entry_id">{''.join(f'<option value="{entry["id"]}" {"selected" if entry["id"] == selected_entry["id"] else ""}>{esc(entry["display_name"])} ({esc(entry["account_name"])})</option>' for entry in entries)}</select></label>
+        <button class="button button--primary button--small" type="submit">Open pick card</button>
+      </form>
+      <section class="panel">
+        {notice}
+        <div class="commissioner-pick-banner"><div><p class="section-label">Editing picks for</p><h2>{esc(selected_entry['display_name'])}</h2><span>{esc(selected_entry['account_name'])} | {esc(week['label'])}</span></div><div class="callout">Commissioner changes can be saved after game locks. Verify the entry and week carefully before saving.</div></div>
+        <form class="pick-form" method="post" action="/commissioner/picks/save">
+          <input type="hidden" name="week_id" value="{week['id']}" /><input type="hidden" name="entry_id" value="{selected_entry['id']}" />
+          <div class="pick-game-grid">{''.join(cards)}</div>
+          <div class="form-row">{''.join(f'<label>{esc(tb["prompt"])}<input type="number" min="0" name="tb_{tb["position"]}" value="{esc(tiebreaker_value(pick, tb["position"]))}" required /></label>' for tb in tiebreakers)}</div>
+          <div class="pick-actions"><button class="button button--primary" type="submit">Save commissioner changes</button><span class="pill">{esc(selected_entry['display_name'])} is selected</span></div>
+        </form>
+      </section>
+    """
+    return render_layout("Pigskin Junkies | Manage Picks", body, "/commissioner", account)
 
 
 def render_game_editor(conn, account, game_id):
@@ -1863,6 +1911,41 @@ def save_picks(conn, account, form):
     return "Your picks have been saved."
 
 
+def save_commissioner_picks(conn, form):
+    week = fetch_week(conn, form.get("week_id"))
+    entry_id = fetch_week_id(form.get("entry_id"))
+    entry = conn.execute("SELECT id FROM entries WHERE id = ?", (entry_id,)).fetchone() if entry_id else None
+    if not week or not entry:
+        return None
+    games = fetch_week_games(conn, week["id"])
+    if any(form.get(f"pick_{game['id']}") not in {game["away_team"], game["home_team"]} for game in games):
+        return None
+    current = conn.execute(
+        "SELECT * FROM picks WHERE week_id = ? AND entry_id = ?", (week["id"], entry_id)
+    ).fetchone()
+    tiebreakers = [int(form.get(f"tb_{position}") or 0) for position in range(1, 4)]
+    if current:
+        pick_id = current["id"]
+        conn.execute(
+            "UPDATE picks SET submitted_at = ?, tiebreaker_1 = ?, tiebreaker_2 = ?, tiebreaker_3 = ? WHERE id = ?",
+            (now_iso(), *tiebreakers, pick_id),
+        )
+    else:
+        pick_id = conn.execute(
+            """INSERT INTO picks (week_id, entry_id, submitted_at, tiebreaker_1, tiebreaker_2, tiebreaker_3)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (week["id"], entry_id, now_iso(), *tiebreakers),
+        ).lastrowid
+    for game in games:
+        conn.execute(
+            """INSERT INTO pick_items (pick_id, game_id, selected_team) VALUES (?, ?, ?)
+               ON CONFLICT(pick_id, game_id) DO UPDATE SET selected_team = excluded.selected_team""",
+            (pick_id, game["id"], form[f"pick_{game['id']}"]),
+        )
+    conn.commit()
+    return {"week_id": week["id"], "entry_id": entry_id}
+
+
 def app(environ, start_response):
     init_db()
     conn = get_conn()
@@ -1968,6 +2051,20 @@ def app(environ, start_response):
         conn.close()
         return html_response(start_response, body)
 
+    if path == "/commissioner/picks" and method == "GET":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login?next=commissioner")
+        if not account["is_commissioner"]:
+            conn.close()
+            return redirect(start_response, "/picks")
+        body = render_commissioner_picks(
+            conn, account, query.get("week_id", [None])[0], query.get("entry_id", [None])[0],
+            "Picks saved for this entry." if query.get("saved", [""])[0] == "1" else "",
+        )
+        conn.close()
+        return html_response(start_response, body)
+
     if path in {"/commissioner/weekly", "/commissioner/participants", "/commissioner/weeks"} and method == "GET":
         if not account:
             conn.close()
@@ -2000,6 +2097,19 @@ def app(environ, start_response):
         add_game(conn, form)
         conn.close()
         return redirect(start_response, commissioner_week_url(form))
+
+    if path == "/commissioner/picks/save" and method == "POST":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login?next=commissioner")
+        if not account["is_commissioner"]:
+            conn.close()
+            return redirect(start_response, "/picks")
+        saved = save_commissioner_picks(conn, read_post_data(environ))
+        conn.close()
+        if not saved:
+            return redirect(start_response, "/commissioner/picks")
+        return redirect(start_response, f"/commissioner/picks?week_id={saved['week_id']}&entry_id={saved['entry_id']}&saved=1")
 
     if path.startswith("/commissioner/game/move/") and method == "POST":
         if not account:
