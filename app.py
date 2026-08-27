@@ -819,7 +819,7 @@ def build_auth_controls(account):
     badge = "Commissioner" if account["is_commissioner"] else "Participant"
     return (
         '<details class="account-menu">'
-        '<summary><span class="account-menu__trigger">Account</span><span class="account-menu__chevron" aria-hidden="true">+</span></summary>'
+        f'<summary><span class="account-menu__trigger">{esc(account["name"])}</span><span class="account-menu__chevron" aria-hidden="true">+</span></summary>'
         '<div class="account-menu__panel">'
         f'<div class="account-menu__identity"><strong>{esc(account["name"])}</strong><span>{badge}</span></div>'
         '<a class="button button--ghost button--small" href="/account/password">Change password</a>'
