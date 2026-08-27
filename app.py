@@ -802,10 +802,10 @@ def compute_season_results(conn):
 def build_nav(active):
     links = [
         ("Home", "/"),
-        ("Commissioner", "/commissioner"),
         ("Submit Picks", "/picks"),
         ("Leaderboards", "/leaderboard"),
         ("Pick Trends", "/trends"),
+        ("Commissioner", "/commissioner"),
     ]
     return "".join(
         f'<a class="main-nav__link{" is-active" if href == active else ""}" href="{href}">{label}</a>'
