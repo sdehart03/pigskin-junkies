@@ -7,10 +7,11 @@ import secrets
 import sqlite3
 import urllib.parse
 from io import StringIO
-from datetime import datetime
+from datetime import datetime, timedelta
 from http import cookies
 from pathlib import Path
 from wsgiref.simple_server import make_server
+from zoneinfo import ZoneInfo
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -20,6 +21,7 @@ SECRET_KEY = os.environ.get("PIGSKIN_JUNKIES_SECRET", "change-this-before-produc
 HOST = os.environ.get("PIGSKIN_JUNKIES_HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8001"))
 COOKIE_SECURE = os.environ.get("PIGSKIN_JUNKIES_COOKIE_SECURE", "0") == "1"
+CONTEST_TIME_ZONE = ZoneInfo("America/New_York")
 
 # Searchable suggestions for the weekly game builder. Commissioners can still type a
 # custom team name for FCS, neutral-site, or future realignment matchups.
@@ -537,7 +539,49 @@ def fetch_week_games(conn, week_id):
 
 
 def is_locked(week):
-    return datetime.fromisoformat(week["lock_time"]) <= datetime.now()
+    return datetime.fromisoformat(week["lock_time"]) <= contest_now()
+
+
+def contest_now():
+    return datetime.now(CONTEST_TIME_ZONE).replace(tzinfo=None)
+
+
+def game_kickoff(game):
+    kickoff = game["kickoff"]
+    try:
+        return datetime.fromisoformat(kickoff)
+    except ValueError:
+        for pattern in ("%a %b %d %I:%M %p",):
+            try:
+                return datetime.strptime(kickoff, pattern).replace(year=contest_now().year)
+            except ValueError:
+                pass
+    return None
+
+
+def is_game_locked(game):
+    kickoff = game_kickoff(game)
+    return contest_now() >= kickoff.replace(second=0, microsecond=0) - timedelta(minutes=1) if kickoff else is_locked_for_legacy_game(game)
+
+
+def has_game_started(game):
+    kickoff = game_kickoff(game)
+    return contest_now() >= kickoff if kickoff else is_locked_for_legacy_game(game)
+
+
+def is_locked_for_legacy_game(game):
+    return True
+
+
+def locked_game_count(games):
+    return sum(1 for game in games if is_game_locked(game))
+
+
+def game_lock_label(game):
+    kickoff = game_kickoff(game)
+    if not kickoff:
+        return "Lock time unavailable"
+    return (kickoff - timedelta(minutes=1)).strftime("%a %b %-d at %-I:%M %p")
 
 
 def game_meta(game):
@@ -669,7 +713,7 @@ def compute_week_results(conn, week_id):
             continue
         wins = 0
         for game in games:
-            if selections.get(entry["id"], {}).get(game["id"]) == game["winner"]:
+            if has_game_started(game) and selections.get(entry["id"], {}).get(game["id"]) == game["winner"]:
                 wins += 1
         results.append(
             {
@@ -780,7 +824,7 @@ def render_home(conn, account):
     results = compute_week_results(conn, week["id"])
     hero_cards = [
         ("Entries submitted", f'{sum(1 for item in results if item["submitted"])}/{len(results)}'),
-        ("Picks", "Locked" if is_locked(week) else "Open"),
+        ("Picks", "Game-by-game locks"),
         ("Leader", f'{results[0]["display_name"]} · {results[0]["wins"]} pts' if results else "Not set"),
     ]
     hero = "".join(
@@ -1151,7 +1195,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
 
     if section == "weekly":
         body = f"""
-          <section class="page-hero"><div><p class="eyebrow">Commissioner workspace</p><h1>{esc(week['label'])} setup</h1></div><div class="page-hero__actions"><span class="pill">{submitted_count} of {len(results)} entries received</span><span class="pill pill--accent">{'Entries are locked' if is_locked(week) else 'Entries are open'}</span></div></section>
+          <section class="page-hero"><div><p class="eyebrow">Commissioner workspace</p><h1>{esc(week['label'])} setup</h1></div><div class="page-hero__actions"><span class="pill">{submitted_count} of {len(results)} entries received</span><span class="pill pill--accent">{len(games) - locked_game_count(games)} games still open</span></div></section>
           {workspace_nav}
           <form class="week-switcher" method="get" action="/commissioner/weekly">
             <label>Build or review a week
@@ -1180,7 +1224,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
         <div><p class="eyebrow">Commissioner view</p><h1>Contest control center</h1></div>
         <div class="page-hero__actions">
           <span class="pill">{submitted_count} of {len(results)} entries received</span>
-          <span class="pill pill--accent">{'Entries are locked' if is_locked(week) else 'Entries are open'}</span>
+          <span class="pill pill--accent">{len(games) - locked_game_count(games)} games still open</span>
         </div>
       </section>
       <section class="commissioner-hub">
@@ -1224,14 +1268,21 @@ def render_picks(conn, account, message="", active_entry_id=None):
     games = fetch_week_games(conn, week["id"])
     cards = []
     for game in games:
+        game_locked = is_game_locked(game)
         options = []
-        for team in (game["away_team"], game["home_team"]):
-            checked = "checked" if selections.get(game["id"]) == team else ""
+        if game_locked:
+            locked_pick = selections.get(game["id"])
             options.append(
-                f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {checked} required /><span>{esc(team)}</span></label>'
+                f'<div class="pick-lock-notice"><strong>{esc(locked_pick) if locked_pick else "No pick submitted"}</strong><span>This game locked at {esc(game_lock_label(game))}.</span></div>'
             )
+        else:
+            for team in (game["away_team"], game["home_team"]):
+                checked = "checked" if selections.get(game["id"]) == team else ""
+                options.append(
+                    f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {checked} required /><span>{esc(team)}</span></label>'
+                )
         cards.append(
-            f'<fieldset class="pick-game-card"><legend>{esc(game["code"])}: {esc(game["away_team"])} at {esc(game["home_team"])}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{"".join(options)}</div></fieldset>'
+            f'<fieldset class="pick-game-card {"pick-game-card--locked" if game_locked else ""}"><legend>{esc(game["code"])}: {esc(game["away_team"])} at {esc(game["home_team"])}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{"".join(options)}</div></fieldset>'
         )
     entry_select = ""
     if len(entries) > 1:
@@ -1247,14 +1298,14 @@ def render_picks(conn, account, message="", active_entry_id=None):
     body = f"""
       <section class="page-hero">
         <div><p class="eyebrow">Participant view</p><h1>Submit your Pigskin Junkies picks</h1></div>
-        <div class="page-hero__actions"><span class="badge">{esc(week["label"])}</span><span class="pill pill--accent">{'Entries are locked' if is_locked(week) else 'Entries are open'}</span></div>
+        <div class="page-hero__actions"><span class="badge">{esc(week["label"])}</span><span class="pill pill--accent">{len(games) - locked_game_count(games)} game locks remaining</span></div>
       </section>
       <section class="panel">
         {notice}
         <form class="pick-form" method="post" action="/picks">
           <div class="form-row">
             <div class="account-banner"><div><strong>{esc(account["name"])}</strong><div class="helper-copy">{esc(account["email"])}</div></div><span class="pill">{len(entries)} entries linked</span></div>
-            <div class="callout">Each correct winner is worth 1 point. First tiebreaker resolves ranking ties.</div>
+            <div class="callout">Each game locks one minute before its own kickoff. Your picks stay private from everyone else until that game begins.</div>
           </div>
           {entry_select}
           <div class="pick-game-grid">{''.join(cards)}</div>
@@ -1339,6 +1390,16 @@ def render_trends(conn, account):
             grouped[row["game_id"]]["counts"][row["selected_team"]] = grouped[row["game_id"]]["counts"].get(row["selected_team"], 0) + 1
     cards = []
     for game in games:
+        if not has_game_started(game):
+            cards.append(
+                f'''<article class="breakdown-card breakdown-card--hidden">
+                  <strong>{esc(game["code"])}</strong>
+                  <span>{esc(game["away_team"])} at {esc(game["home_team"])}</span>
+                  <div class="pick-game-card__meta">{esc(game_meta(game))}</div>
+                  <div class="pick-lock-notice"><strong>Pick trends unlock at kickoff</strong><span>Selections stay private until this game begins.</span></div>
+                </article>'''
+            )
+            continue
         counts = grouped.get(game["id"], {"counts": {}})["counts"]
         away_count = counts.get(game["away_team"], 0)
         home_count = counts.get(game["home_team"], 0)
@@ -1389,16 +1450,18 @@ def render_player(conn, account, entry_id, week_id):
     result = next((row for row in compute_week_results(conn, week["id"]) if row["entry_id"] == entry["id"]), None)
     rows = []
     for game in games:
-        selected = selections.get(game["id"], "-")
-        correct = selected == game["winner"]
-        status = "No pick" if selected == "-" else ("Correct" if correct else "Miss")
+        visible = has_game_started(game)
+        selected = selections.get(game["id"], "-") if visible else "Hidden until kickoff"
+        winner = game["winner"] if visible else "Hidden until kickoff"
+        correct = visible and selected == game["winner"]
+        status = "Hidden" if not visible else ("No pick" if selected == "-" else ("Correct" if correct else "Miss"))
         status_class = "status--good" if correct else "status--warn"
         rows.append(
             "<tr>"
             f"<td>{esc(game['code'])}</td>"
             f"<td>{esc(game['away_team'])} at {esc(game['home_team'])}<div class=\"helper-copy\">{esc(game_meta(game))}</div></td>"
             f"<td>{esc(selected)}</td>"
-            f"<td>{esc(game['winner'] or 'TBD')}</td>"
+            f"<td>{esc(winner or 'TBD')}</td>"
             f'<td class="status {status_class}">{status}</td>'
             "</tr>"
         )
@@ -1646,8 +1709,6 @@ def update_game(conn, form):
 
 def save_picks(conn, account, form):
     week = fetch_current_week(conn)
-    if is_locked(week):
-        return "This week is locked. Ask a commissioner to reopen entries if a change is needed."
     entries = fetch_account_entries(conn, account["id"])
     entry_ids = {str(entry["id"]) for entry in entries}
     selected_entry_id = form.get("entry_id") or (str(entries[0]["id"]) if entries else None)
@@ -1659,19 +1720,20 @@ def save_picks(conn, account, form):
         "SELECT * FROM picks WHERE week_id = ? AND entry_id = ?",
         (week["id"], selected_entry_id),
     ).fetchone()
+    tb_game = next((game for game in games if game["code"] == "Game 20"), games[-1] if games else None)
+    tiebreakers_locked = bool(tb_game and is_game_locked(tb_game))
     if current:
         pick_id = current["id"]
         conn.execute(
             "UPDATE picks SET submitted_at = ?, tiebreaker_1 = ?, tiebreaker_2 = ?, tiebreaker_3 = ? WHERE id = ?",
             (
                 now_iso(),
-                int(form.get("tb_1") or 0),
-                int(form.get("tb_2") or 0),
-                int(form.get("tb_3") or 0),
+                current["tiebreaker_1"] if tiebreakers_locked else int(form.get("tb_1") or 0),
+                current["tiebreaker_2"] if tiebreakers_locked else int(form.get("tb_2") or 0),
+                current["tiebreaker_3"] if tiebreakers_locked else int(form.get("tb_3") or 0),
                 pick_id,
             ),
         )
-        conn.execute("DELETE FROM pick_items WHERE pick_id = ?", (pick_id,))
     else:
         cur = conn.execute(
             """
@@ -1689,11 +1751,16 @@ def save_picks(conn, account, form):
         )
         pick_id = cur.lastrowid
     for game in games:
+        if is_game_locked(game):
+            continue
         selected = form.get(f"pick_{game['id']}")
-        if not selected:
+        if selected not in {game["away_team"], game["home_team"]}:
             continue
         conn.execute(
-            "INSERT INTO pick_items (pick_id, game_id, selected_team) VALUES (?, ?, ?)",
+            """
+            INSERT INTO pick_items (pick_id, game_id, selected_team) VALUES (?, ?, ?)
+            ON CONFLICT(pick_id, game_id) DO UPDATE SET selected_team = excluded.selected_team
+            """,
             (pick_id, game["id"], selected),
         )
     conn.commit()
