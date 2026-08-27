@@ -676,6 +676,7 @@ def build_auth_controls(account):
     return (
         '<div class="auth-chip">'
         f'<span><span class="auth-chip__name">{esc(account["name"])}</span> · {badge}</span>'
+        '<a class="button button--ghost button--small" href="/account/password">Change password</a>'
         '<a class="button button--ghost button--small" href="/logout">Log Out</a>'
         "</div>"
     )
@@ -822,6 +823,38 @@ def render_login(conn, account, error="", next_page=""):
       </section>
     """
     return render_layout("Pigskin Junkies | Sign In", body, "", account)
+
+
+def render_change_password(account, error="", message=""):
+    error_html = f'<div class="alert alert--error">{esc(error)}</div>' if error else ""
+    message_html = f'<div class="alert alert--success">{esc(message)}</div>' if message else ""
+    body = f"""
+      <section class="page-hero"><div><p class="eyebrow">Account security</p><h1>Change your password</h1></div></section>
+      <section class="auth-layout">
+        <article class="panel">
+          <p class="section-label">Private account details</p>
+          <h2>Choose a password only you know</h2>
+          {error_html}
+          {message_html}
+          <form class="form-card" method="post" action="/account/password">
+            <label>Current password<input type="password" name="current_password" autocomplete="current-password" required /></label>
+            <label>New password<input type="password" name="new_password" autocomplete="new-password" minlength="8" required /></label>
+            <label>Confirm new password<input type="password" name="confirm_password" autocomplete="new-password" minlength="8" required /></label>
+            <div class="callout">Use at least 8 characters. After you save it, commissioners cannot view your new password.</div>
+            <div class="pick-actions"><button class="button button--primary" type="submit">Save new password</button></div>
+          </form>
+        </article>
+        <article class="panel">
+          <p class="section-label">Your login</p>
+          <h2>Keep your entry secure</h2>
+          <div class="stack">
+            <div class="summary-card"><strong>{esc(account["name"])}</strong><span>{esc(account["email"])}</span></div>
+            <div class="summary-card"><strong>Temporary passwords</strong><span>Replace the password given to you by a commissioner as soon as you sign in.</span></div>
+          </div>
+        </article>
+      </section>
+    """
+    return render_layout("Pigskin Junkies | Change Password", body, "", account)
 
 
 def render_commissioner(conn, account):
@@ -1516,6 +1549,40 @@ def app(environ, start_response):
             cookie_header("pigskin_entry", "", max_age=0),
         ]
         return redirect(start_response, "/login", headers)
+
+    if path == "/account/password" and method == "GET":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login")
+        body = render_change_password(account)
+        conn.close()
+        return html_response(start_response, body)
+
+    if path == "/account/password" and method == "POST":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login")
+        form = read_post_data(environ)
+        current_password = form.get("current_password", "")
+        new_password = form.get("new_password", "")
+        confirm_password = form.get("confirm_password", "")
+        if not verify_password(current_password, account["password_hash"]):
+            body = render_change_password(account, error="Your current password was not correct.")
+            conn.close()
+            return html_response(start_response, body, status="400 Bad Request")
+        if len(new_password) < 8:
+            body = render_change_password(account, error="Your new password must be at least 8 characters.")
+            conn.close()
+            return html_response(start_response, body, status="400 Bad Request")
+        if new_password != confirm_password:
+            body = render_change_password(account, error="Your new passwords did not match.")
+            conn.close()
+            return html_response(start_response, body, status="400 Bad Request")
+        conn.execute("UPDATE accounts SET password_hash = ? WHERE id = ?", (hash_password(new_password), account["id"]))
+        conn.commit()
+        body = render_change_password(account, message="Your password has been updated. Only you know the new one.")
+        conn.close()
+        return html_response(start_response, body)
 
     if path == "/commissioner" and method == "GET":
         if not account:
