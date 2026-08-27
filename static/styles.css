@@ -752,6 +752,21 @@ tbody tr:last-child td {
   grid-template-columns: minmax(0, 1.8fr) minmax(260px, 0.7fr);
 }
 
+.game-builder-panel {
+  margin-top: 24px;
+}
+
+.game-builder-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.game-builder-grid .pick-actions {
+  align-items: end;
+  justify-content: flex-start;
+}
+
 .score-input {
   width: 4.6rem;
   min-width: 4.6rem;
@@ -765,6 +780,10 @@ tbody tr:last-child td {
   .commissioner-hub,
   .commissioner-weekly-grid {
     grid-template-columns: 1fr;
+  }
+
+  .game-builder-grid {
+    grid-template-columns: 1fr 1fr;
   }
 
   .site-header,
@@ -815,5 +834,13 @@ tbody tr:last-child td {
 
   .commissioner-hub__card {
     min-height: 0;
+  }
+
+  .game-builder-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .game-builder-grid .pick-actions {
+    align-items: stretch;
   }
 }
