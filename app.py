@@ -877,7 +877,7 @@ def render_home(conn, account):
           <p class="hero__lede">Make your picks before each kickoff, then follow the board as the weekend unfolds.</p>
           <div class="hero__actions">
             <a class="button button--primary" href="/picks">Open my pick card</a>
-            <a class="button button--ghost" href="/leaderboard">Check the board</a>
+            <a class="button button--ghost" href="/leaderboard">Check Leaderboard</a>
           </div>
         </div>
         <aside class="hero__card home-week-card">
