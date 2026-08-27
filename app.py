@@ -499,6 +499,29 @@ def fetch_current_week(conn):
     return conn.execute("SELECT * FROM weeks ORDER BY id DESC LIMIT 1").fetchone()
 
 
+def fetch_week(conn, week_id):
+    try:
+        return conn.execute("SELECT * FROM weeks WHERE id = ?", (int(week_id),)).fetchone()
+    except (TypeError, ValueError):
+        return None
+
+
+def form_week(conn, form):
+    return fetch_week(conn, form.get("week_id")) or fetch_current_week(conn)
+
+
+def commissioner_week_url(form):
+    week = form.get("week_id", "")
+    return f"/commissioner/weekly?week_id={urllib.parse.quote(str(week))}" if fetch_week_id(week) else "/commissioner/weekly"
+
+
+def fetch_week_id(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def fetch_week_tiebreakers(conn, week_id):
     return conn.execute(
         "SELECT * FROM tiebreakers WHERE week_id = ? ORDER BY position",
@@ -887,7 +910,7 @@ def render_delete_account_confirmation(account, target):
     return render_layout("Pigskin Junkies | Confirm Account Deletion", body, "/commissioner", account)
 
 
-def render_commissioner(conn, account, section="dashboard"):
+def render_commissioner(conn, account, section="dashboard", week_id=None):
     if not account:
         return None, redirect  # sentinel handled by caller
     if not account["is_commissioner"]:
@@ -902,7 +925,7 @@ def render_commissioner(conn, account, section="dashboard"):
         """
         return render_layout("Pigskin Junkies | Commissioner", body, "/commissioner", account), None
 
-    week = fetch_current_week(conn)
+    week = fetch_week(conn, week_id) or fetch_current_week(conn)
     tiebreakers = fetch_week_tiebreakers(conn, week["id"])
     games = fetch_week_games(conn, week["id"])
     results = compute_week_results(conn, week["id"])
@@ -935,6 +958,7 @@ def render_commissioner(conn, account, section="dashboard"):
             f'''<td><details class="manage-details game-edit-details"><summary>Edit</summary>
               <form class="inline-form" method="post" action="/commissioner/game/update">
                 <input type="hidden" name="game_id" value="{game["id"]}" />
+                <input type="hidden" name="week_id" value="{week["id"]}" />
                 <label>Away team<input list="ncaa-team-options" name="away_team" value="{esc(game["away_team"])}" required /></label>
                 <label>Home team<input list="ncaa-team-options" name="home_team" value="{esc(game["home_team"])}" required /></label>
                 <label>Kickoff<input type="text" name="kickoff" value="{esc(game["kickoff"])}" required /></label>
@@ -1004,6 +1028,7 @@ def render_commissioner(conn, account, section="dashboard"):
         <article class="panel">
           <div class="section-heading"><div><p class="section-label">Weekly setup</p><h2>Week settings and results</h2></div></div>
           <form class="form-card" method="post" action="/commissioner/save">
+            <input type="hidden" name="week_id" value="{week['id']}" />
             <div class="form-row">
               <label>Week label<input type="text" name="week_label" value="{esc(week['label'])}" /></label>
               <label>Lock time<input type="datetime-local" name="lock_time" value="{esc(week['lock_time'])}" /></label>
@@ -1030,6 +1055,7 @@ def render_commissioner(conn, account, section="dashboard"):
         <div class="callout">Choose from the NCAA team suggestions or type any custom team name. The favorite and spread become the exact text participants see on their pick card.</div>
         {team_datalist}
         <form class="form-card game-builder-grid" method="post" action="/commissioner/game/add">
+          <input type="hidden" name="week_id" value="{week['id']}" />
           <label>Away team<input list="ncaa-team-options" name="away_team" placeholder="Start typing a team" required /></label>
           <label>Home team<input list="ncaa-team-options" name="home_team" placeholder="Start typing a team" required /></label>
           <label>Kickoff<input type="datetime-local" name="kickoff" required /></label>
@@ -1126,7 +1152,17 @@ def render_commissioner(conn, account, section="dashboard"):
     if section == "weekly":
         body = f"""
           <section class="page-hero"><div><p class="eyebrow">Commissioner workspace</p><h1>{esc(week['label'])} setup</h1></div><div class="page-hero__actions"><span class="pill">{submitted_count} of {len(results)} entries received</span><span class="pill pill--accent">{'Entries are locked' if is_locked(week) else 'Entries are open'}</span></div></section>
-          {workspace_nav}{weekly_section}
+          {workspace_nav}
+          <form class="week-switcher" method="get" action="/commissioner/weekly">
+            <label>Build or review a week
+              <select name="week_id">
+                {''.join(f'<option value="{listed_week["id"]}" {"selected" if listed_week["id"] == week["id"] else ""}>{esc(listed_week["label"])}{" (current)" if listed_week["is_current"] else ""}</option>' for listed_week in weeks)}
+              </select>
+            </label>
+            <button class="button button--primary button--small" type="submit">Open week</button>
+            <span>This only changes the commissioner workspace. It does not change the public contest week.</span>
+          </form>
+          {weekly_section}
         """
     elif section == "participants":
         body = f"""
@@ -1396,7 +1432,7 @@ def render_player(conn, account, entry_id, week_id):
 
 
 def save_commissioner_changes(conn, form):
-    week = fetch_current_week(conn)
+    week = form_week(conn, form)
     conn.execute(
         "UPDATE weeks SET label = ?, lock_time = ? WHERE id = ?",
         (form.get("week_label", week["label"]).strip() or week["label"], form.get("lock_time", week["lock_time"]), week["id"]),
@@ -1550,7 +1586,7 @@ def create_week(conn, form):
 
 
 def add_game(conn, form):
-    week = fetch_current_week(conn)
+    week = form_week(conn, form)
     away_team = (form.get("away_team") or "").strip()
     home_team = (form.get("home_team") or "").strip()
     kickoff = (form.get("kickoff") or "").strip()
@@ -1583,7 +1619,7 @@ def add_game(conn, form):
 
 
 def update_game(conn, form):
-    week = fetch_current_week(conn)
+    week = form_week(conn, form)
     game_id = int(form.get("game_id") or 0)
     game = conn.execute("SELECT * FROM games WHERE id = ? AND week_id = ?", (game_id, week["id"])).fetchone() if week else None
     away_team = (form.get("away_team") or "").strip()
@@ -1762,7 +1798,7 @@ def app(environ, start_response):
             conn.close()
             return redirect(start_response, "/login?next=commissioner")
         section = path.rsplit("/", 1)[-1]
-        body, sentinel = render_commissioner(conn, account, section=section)
+        body, sentinel = render_commissioner(conn, account, section=section, week_id=query.get("week_id", [None])[0])
         conn.close()
         return html_response(start_response, body)
 
@@ -1773,9 +1809,10 @@ def app(environ, start_response):
         if not account["is_commissioner"]:
             conn.close()
             return redirect(start_response, "/picks")
-        save_commissioner_changes(conn, read_post_data(environ))
+        form = read_post_data(environ)
+        save_commissioner_changes(conn, form)
         conn.close()
-        return redirect(start_response, "/commissioner/weekly")
+        return redirect(start_response, commissioner_week_url(form))
 
     if path == "/commissioner/game/add" and method == "POST":
         if not account:
@@ -1784,9 +1821,10 @@ def app(environ, start_response):
         if not account["is_commissioner"]:
             conn.close()
             return redirect(start_response, "/picks")
-        add_game(conn, read_post_data(environ))
+        form = read_post_data(environ)
+        add_game(conn, form)
         conn.close()
-        return redirect(start_response, "/commissioner/weekly")
+        return redirect(start_response, commissioner_week_url(form))
 
     if path == "/commissioner/game/update" and method == "POST":
         if not account:
@@ -1795,9 +1833,10 @@ def app(environ, start_response):
         if not account["is_commissioner"]:
             conn.close()
             return redirect(start_response, "/picks")
-        update_game(conn, read_post_data(environ))
+        form = read_post_data(environ)
+        update_game(conn, form)
         conn.close()
-        return redirect(start_response, "/commissioner/weekly")
+        return redirect(start_response, commissioner_week_url(form))
 
     if path == "/commissioner/account/add" and method == "POST":
         if not account:
