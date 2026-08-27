@@ -232,6 +232,27 @@ thead th,
   max-width: 12ch;
 }
 
+.home-week-card {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.home-week-card__label {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.65rem;
+}
+
+.home-week-card__item {
+  display: grid;
+  gap: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.home-week-card__item span { color: var(--muted); font-size: 0.9rem; }
+.home-week-card__item strong { line-height: 1.3; }
+
 .hero__lede {
   max-width: 58ch;
   margin: 16px 0 24px;
