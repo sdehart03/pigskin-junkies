@@ -1018,21 +1018,12 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
     ) or '<div class="missing-player"><strong>Everyone is in</strong><span>No follow-up needed</span></div>'
     game_rows = []
     for game in games:
-        favorite_side, spread_value = line_values(game["spread_text"], game["away_team"], game["home_team"])
-        winner_select = (
-            f'<select form="commissioner-save-form" name="winner_{game["id"]}">'
-            f'<option value="" {"selected" if not game["winner"] else ""}>No result yet</option>'
-            f'<option value="{esc(game["away_team"])}" {"selected" if game["winner"] == game["away_team"] else ""}>{esc(game["away_team"])}</option>'
-            f'<option value="{esc(game["home_team"])}" {"selected" if game["winner"] == game["home_team"] else ""}>{esc(game["home_team"])}</option>'
-            "</select>"
-        )
         game_rows.append(
             "<tr>"
             f"<td>{esc(game['code'])}</td>"
             f"<td><strong>{esc(game['away_team'])}</strong> at <strong>{esc(game['home_team'])}</strong></td>"
             f"<td>{esc(game_meta(game))}</td>"
             f"<td>{esc(game['spread_text'])}</td>"
-            f"<td>{winner_select}</td>"
             f'<td><div class="summary-row"><input form="commissioner-save-form" class="score-input" type="number" min="0" aria-label="{esc(game["away_team"])} final score" name="score_away_{game["id"]}" value="{game["score_away"]}" /><input form="commissioner-save-form" class="score-input" type="number" min="0" aria-label="{esc(game["home_team"])} final score" name="score_home_{game["id"]}" value="{game["score_home"]}" /></div></td>'
             f'''<td><div class="game-row-actions"><a class="button button--ghost button--small" href="/commissioner/game/{game["id"]}/edit">Edit</a>
               <form method="post" action="/commissioner/game/move/{game["id"]}"><button class="button button--ghost button--small" type="submit" name="direction" value="earlier" {"disabled" if game == games[0] else ""}>Up</button></form>
@@ -1109,7 +1100,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
           </form>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Game</th><th>Matchup</th><th>Kickoff</th><th>Spread</th><th>ATS winner</th><th>Final score</th><th>Manage</th></tr></thead>
+              <thead><tr><th>Game</th><th>Matchup</th><th>Kickoff</th><th>Spread</th><th>Final score</th><th>Manage</th></tr></thead>
               <tbody>{''.join(game_rows)}</tbody>
             </table>
           </div>
@@ -1641,7 +1632,7 @@ def save_commissioner_changes(conn, form):
     for game in fetch_week_games(conn, week["id"]):
         score_away = int(form.get(f"score_away_{game['id']}", game["score_away"]) or 0)
         score_home = int(form.get(f"score_home_{game['id']}", game["score_home"]) or 0)
-        winner = ats_winner_for_score(game, score_away, score_home) or form.get(f"winner_{game['id']}", game["winner"]) or None
+        winner = ats_winner_for_score(game, score_away, score_home)
         conn.execute(
             "UPDATE games SET winner = ?, score_away = ?, score_home = ? WHERE id = ?",
             (
