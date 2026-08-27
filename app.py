@@ -818,11 +818,13 @@ def build_auth_controls(account):
         return '<a class="auth-chip" href="/login">Sign In</a>'
     badge = "Commissioner" if account["is_commissioner"] else "Participant"
     return (
-        '<div class="auth-chip">'
-        f'<span><span class="auth-chip__name">{esc(account["name"])}</span> · {badge}</span>'
+        '<details class="account-menu">'
+        '<summary><span class="account-menu__trigger">Account</span><span class="account-menu__chevron" aria-hidden="true">+</span></summary>'
+        '<div class="account-menu__panel">'
+        f'<div class="account-menu__identity"><strong>{esc(account["name"])}</strong><span>{badge}</span></div>'
         '<a class="button button--ghost button--small" href="/account/password">Change password</a>'
         '<a class="button button--ghost button--small" href="/logout">Log Out</a>'
-        "</div>"
+        "</div></details>"
     )
 
 
