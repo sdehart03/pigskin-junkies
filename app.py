@@ -21,6 +21,28 @@ HOST = os.environ.get("PIGSKIN_JUNKIES_HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8001"))
 COOKIE_SECURE = os.environ.get("PIGSKIN_JUNKIES_COOKIE_SECURE", "0") == "1"
 
+# Searchable suggestions for the weekly game builder. Commissioners can still type a
+# custom team name for FCS, neutral-site, or future realignment matchups.
+NCAA_TEAMS = (
+    "Air Force", "Akron", "Alabama", "Appalachian State", "Arizona", "Arizona State", "Arkansas", "Arkansas State",
+    "Army", "Auburn", "Ball State", "Baylor", "Boise State", "Boston College", "Bowling Green", "Buffalo",
+    "BYU", "California", "Central Michigan", "Charlotte", "Cincinnati", "Clemson", "Coastal Carolina", "Colorado",
+    "Colorado State", "Connecticut", "Duke", "East Carolina", "Eastern Michigan", "Florida", "Florida Atlantic",
+    "Florida International", "Florida State", "Fresno State", "Georgia", "Georgia Southern", "Georgia State",
+    "Georgia Tech", "Hawaii", "Houston", "Illinois", "Indiana", "Iowa", "Iowa State", "Jacksonville State",
+    "James Madison", "Kansas", "Kansas State", "Kennesaw State", "Kent State", "Kentucky", "Liberty", "Louisiana",
+    "Louisiana Tech", "Louisiana-Monroe", "Louisville", "LSU", "Marshall", "Maryland", "Memphis", "Miami (FL)",
+    "Miami (OH)", "Michigan", "Michigan State", "Middle Tennessee", "Minnesota", "Mississippi State", "Missouri",
+    "Missouri State", "Navy", "NC State", "Nebraska", "Nevada", "New Mexico", "New Mexico State", "North Carolina",
+    "North Texas", "Northern Illinois", "Northwestern", "Notre Dame", "Ohio", "Ohio State", "Oklahoma", "Oklahoma State",
+    "Old Dominion", "Ole Miss", "Oregon", "Oregon State", "Penn State", "Pittsburgh", "Purdue", "Rice", "Rutgers",
+    "Sam Houston", "San Diego State", "San Jose State", "SMU", "South Alabama", "South Carolina", "South Florida",
+    "Southern Mississippi", "Stanford", "Syracuse", "TCU", "Temple", "Tennessee", "Texas", "Texas A&M", "Texas State",
+    "Texas Tech", "Toledo", "Troy", "Tulane", "Tulsa", "UAB", "UCF", "UCLA", "UConn", "ULM", "UMass", "UNLV",
+    "USC", "UTEP", "UTSA", "Utah", "Utah State", "Vanderbilt", "Virginia", "Virginia Tech", "Wake Forest",
+    "Washington", "Washington State", "West Virginia", "Western Kentucky", "Western Michigan", "Wisconsin", "Wyoming"
+)
+
 
 def esc(value):
     return html.escape("" if value is None else str(value), quote=True)
@@ -496,7 +518,12 @@ def is_locked(week):
 
 
 def game_meta(game):
-    parts = [game["kickoff"]]
+    kickoff = game["kickoff"]
+    try:
+        kickoff = datetime.fromisoformat(kickoff).strftime("%a %b %-d %-I:%M %p")
+    except ValueError:
+        pass
+    parts = [kickoff]
     if game["site_note"]:
         parts.append(game["site_note"])
     parts.append(game["spread_text"])
@@ -940,6 +967,10 @@ def render_commissioner(conn, account, section="dashboard"):
             f"<td>{'Current' if listed_week['is_current'] else ''}</td>"
             "</tr>"
         )
+    next_game_number = len(games) + 1
+    team_datalist = '<datalist id="ncaa-team-options">' + ''.join(
+        f'<option value="{esc(team)}"></option>' for team in NCAA_TEAMS
+    ) + "</datalist>"
     weekly_section = f"""
       <section class="dashboard-grid commissioner-weekly-grid">
         <article class="panel">
@@ -965,6 +996,22 @@ def render_commissioner(conn, account, section="dashboard"):
           <p class="section-label">Operations</p><h2>Who still needs to pick?</h2>
           <div class="stack compact-stack">{missing_html}</div>
         </article>
+      </section>
+      <section class="panel game-builder-panel">
+        <div class="section-heading"><div><p class="section-label">Game builder</p><h2>Add a matchup to {esc(week['label'])}</h2></div><span class="badge">Next: Game {next_game_number:02d}</span></div>
+        <div class="callout">Choose from the NCAA team suggestions or type any custom team name. The favorite and spread become the exact text participants see on their pick card.</div>
+        {team_datalist}
+        <form class="form-card game-builder-grid" method="post" action="/commissioner/game/add">
+          <label>Away team<input list="ncaa-team-options" name="away_team" placeholder="Start typing a team" required /></label>
+          <label>Home team<input list="ncaa-team-options" name="home_team" placeholder="Start typing a team" required /></label>
+          <label>Kickoff<input type="datetime-local" name="kickoff" required /></label>
+          <label>Location or note<input type="text" name="site_note" placeholder="Example: Atlanta, GA or neutral site" /></label>
+          <label>Favorite
+            <select name="favorite_side"><option value="away">Away team</option><option value="home" selected>Home team</option><option value="none">Pick 'em</option></select>
+          </label>
+          <label>Favorite by<input type="number" min="0" step="0.5" name="spread" placeholder="Example: 3.5" /></label>
+          <div class="pick-actions"><button class="button button--primary" type="submit">Add Game {next_game_number:02d}</button></div>
+        </form>
       </section>
     """
 
@@ -1025,22 +1072,21 @@ def render_commissioner(conn, account, section="dashboard"):
             <tbody>{''.join(week_rows)}</tbody>
           </table>
         </div>
-        <details class="commissioner-disclosure panel-subsection">
-          <summary>Add a new contest week</summary>
-          <form class="form-card" method="post" action="/commissioner/week/add">
-            <div class="form-row">
-              <label>Week label<input type="text" name="label" placeholder="Week 2" required /></label>
-              <label>Slug<input type="text" name="slug" placeholder="week-2" required /></label>
-            </div>
-            <div class="form-row">
-              <label>Lock time<input type="datetime-local" name="lock_time" required /></label>
-              <label>Copy games and tiebreakers from current week
-                <select name="copy_from_current"><option value="1">Yes</option><option value="0">No</option></select>
-              </label>
-            </div>
-            <button class="button button--primary" type="submit">Create week</button>
-          </form>
-        </details>
+        <div class="section-heading panel-subsection"><div><p class="section-label">New week</p><h2>Start the next slate</h2></div></div>
+        <form id="new-week" class="form-card" method="post" action="/commissioner/week/add">
+          <div class="form-row">
+            <label>Week label<input type="text" name="label" placeholder="Week 2" required /></label>
+            <label>Slug<input type="text" name="slug" placeholder="week-2" required /></label>
+          </div>
+          <div class="form-row">
+            <label>Lock time<input type="datetime-local" name="lock_time" required /></label>
+            <label>Start with
+              <select name="copy_from_current"><option value="0" selected>Blank week and new games</option><option value="1">Copy current games and tiebreakers</option></select>
+            </label>
+          </div>
+          <label class="checkbox-row"><input type="checkbox" name="make_current" value="1" /> Make this the current week now</label>
+          <button class="button button--primary" type="submit">Create new week</button>
+        </form>
       </section>
     """
 
@@ -1465,9 +1511,12 @@ def create_week(conn, form):
     if not all([label, slug, lock_time]):
         return
     current_week = fetch_current_week(conn)
+    make_current = form.get("make_current") == "1"
+    if make_current:
+        conn.execute("UPDATE weeks SET is_current = 0")
     cur = conn.execute(
-        "INSERT INTO weeks (slug, label, lock_time, is_current) VALUES (?, ?, ?, 0)",
-        (slug, label, lock_time),
+        "INSERT INTO weeks (slug, label, lock_time, is_current) VALUES (?, ?, ?, ?)",
+        (slug, label, lock_time, 1 if make_current else 0),
     )
     new_week_id = cur.lastrowid
     if copy_from_current and current_week:
@@ -1479,8 +1528,8 @@ def create_week(conn, form):
         for game in fetch_week_games(conn, current_week["id"]):
             conn.execute(
                 """
-                INSERT INTO games (week_id, code, away_team, home_team, kickoff, spread_text, winner, score_away, score_home)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO games (week_id, code, away_team, home_team, kickoff, site_note, spread_text, winner, score_away, score_home)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     new_week_id,
@@ -1488,13 +1537,53 @@ def create_week(conn, form):
                     game["away_team"],
                     game["home_team"],
                     game["kickoff"],
+                    game["site_note"],
                     game["spread_text"],
-                    "",
+                    None,
                     0,
                     0,
                 ),
             )
+    else:
+        for position in range(1, 4):
+            conn.execute(
+                "INSERT INTO tiebreakers (week_id, position, prompt) VALUES (?, ?, ?)",
+                (new_week_id, position, f"Tiebreaker {position}"),
+            )
     conn.commit()
+
+
+def add_game(conn, form):
+    week = fetch_current_week(conn)
+    away_team = (form.get("away_team") or "").strip()
+    home_team = (form.get("home_team") or "").strip()
+    kickoff = (form.get("kickoff") or "").strip()
+    site_note = (form.get("site_note") or "").strip()
+    favorite_side = form.get("favorite_side") or "none"
+    spread_raw = (form.get("spread") or "").strip()
+    if not week or not all([away_team, home_team, kickoff]) or away_team.lower() == home_team.lower():
+        return False
+    try:
+        spread = abs(float(spread_raw)) if spread_raw else 0
+    except ValueError:
+        return False
+    if favorite_side == "away":
+        favorite = away_team
+    elif favorite_side == "home":
+        favorite = home_team
+    else:
+        favorite = ""
+    spread_text = f"{favorite} -{spread:g}" if favorite and spread else "Pick 'em"
+    game_count = conn.execute("SELECT COUNT(*) AS count FROM games WHERE week_id = ?", (week["id"],)).fetchone()["count"]
+    conn.execute(
+        """
+        INSERT INTO games (week_id, code, away_team, home_team, kickoff, site_note, spread_text, winner, score_away, score_home)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, 0)
+        """,
+        (week["id"], f"Game {game_count + 1:02d}", away_team, home_team, kickoff, site_note, spread_text),
+    )
+    conn.commit()
+    return True
 
 
 def save_picks(conn, account, form):
@@ -1663,6 +1752,17 @@ def app(environ, start_response):
             conn.close()
             return redirect(start_response, "/picks")
         save_commissioner_changes(conn, read_post_data(environ))
+        conn.close()
+        return redirect(start_response, "/commissioner/weekly")
+
+    if path == "/commissioner/game/add" and method == "POST":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login?next=commissioner")
+        if not account["is_commissioner"]:
+            conn.close()
+            return redirect(start_response, "/picks")
+        add_game(conn, read_post_data(environ))
         conn.close()
         return redirect(start_response, "/commissioner/weekly")
 
