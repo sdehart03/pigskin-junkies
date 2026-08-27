@@ -985,7 +985,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
     for game in games:
         favorite_side, spread_value = line_values(game["spread_text"], game["away_team"], game["home_team"])
         winner_select = (
-            f'<select name="winner_{game["id"]}">'
+            f'<select form="commissioner-save-form" name="winner_{game["id"]}">'
             f'<option value="" {"selected" if not game["winner"] else ""}>No result yet</option>'
             f'<option value="{esc(game["away_team"])}" {"selected" if game["winner"] == game["away_team"] else ""}>{esc(game["away_team"])}</option>'
             f'<option value="{esc(game["home_team"])}" {"selected" if game["winner"] == game["home_team"] else ""}>{esc(game["home_team"])}</option>'
@@ -998,7 +998,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             f"<td>{esc(game_meta(game))}</td>"
             f"<td>{esc(game['spread_text'])}</td>"
             f"<td>{winner_select}</td>"
-            f'<td><div class="summary-row"><input class="score-input" type="number" min="0" aria-label="{esc(game["away_team"])} final score" name="score_away_{game["id"]}" value="{game["score_away"]}" /><input class="score-input" type="number" min="0" aria-label="{esc(game["home_team"])} final score" name="score_home_{game["id"]}" value="{game["score_home"]}" /></div></td>'
+            f'<td><div class="summary-row"><input form="commissioner-save-form" class="score-input" type="number" min="0" aria-label="{esc(game["away_team"])} final score" name="score_away_{game["id"]}" value="{game["score_away"]}" /><input form="commissioner-save-form" class="score-input" type="number" min="0" aria-label="{esc(game["home_team"])} final score" name="score_home_{game["id"]}" value="{game["score_home"]}" /></div></td>'
             f'''<td><details class="manage-details game-edit-details"><summary>Edit</summary>
               <form class="inline-form" method="post" action="/commissioner/game/update">
                 <input type="hidden" name="game_id" value="{game["id"]}" />
@@ -1071,7 +1071,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
       <section class="dashboard-grid commissioner-weekly-grid">
         <article class="panel">
           <div class="section-heading"><div><p class="section-label">Weekly setup</p><h2>Week settings and results</h2></div></div>
-          <form class="form-card" method="post" action="/commissioner/save">
+          <form id="commissioner-save-form" class="form-card" method="post" action="/commissioner/save">
             <input type="hidden" name="week_id" value="{week['id']}" />
             <div class="form-row">
               <label>Week label<input type="text" name="week_label" value="{esc(week['label'])}" /></label>
@@ -1080,14 +1080,14 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             <div class="form-row">
               {''.join(f'<label>Tiebreaker {tb["position"]}<input type="text" name="tb_{tb["position"]}" value="{esc(tb["prompt"])}" /></label>' for tb in tiebreakers)}
             </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Game</th><th>Matchup</th><th>Kickoff</th><th>Spread</th><th>Winner</th><th>Final score</th><th>Edit</th></tr></thead>
-                <tbody>{''.join(game_rows)}</tbody>
-              </table>
-            </div>
-            <button class="button button--primary" type="submit">Save contest updates</button>
           </form>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Game</th><th>Matchup</th><th>Kickoff</th><th>Spread</th><th>Winner</th><th>Final score</th><th>Edit</th></tr></thead>
+              <tbody>{''.join(game_rows)}</tbody>
+            </table>
+          </div>
+          <button form="commissioner-save-form" class="button button--primary" type="submit">Save contest updates</button>
         </article>
         <article class="panel">
           <p class="section-label">Operations</p><h2>Who still needs to pick?</h2>
