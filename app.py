@@ -134,6 +134,7 @@ def init_db():
             kickoff TEXT NOT NULL,
             site_note TEXT NOT NULL DEFAULT '',
             spread_text TEXT NOT NULL,
+            display_order INTEGER NOT NULL DEFAULT 0,
             winner TEXT,
             score_away INTEGER NOT NULL DEFAULT 0,
             score_home INTEGER NOT NULL DEFAULT 0,
@@ -169,6 +170,7 @@ def init_db():
     existing = conn.execute("SELECT COUNT(*) AS count FROM accounts").fetchone()["count"]
     if existing == 0:
         seed_database(conn)
+        ensure_schema(conn)
     conn.commit()
     conn.close()
 
@@ -177,6 +179,18 @@ def ensure_schema(conn):
     columns = [row["name"] for row in conn.execute("PRAGMA table_info(games)").fetchall()]
     if "site_note" not in columns:
         conn.execute("ALTER TABLE games ADD COLUMN site_note TEXT NOT NULL DEFAULT ''")
+    if "display_order" not in columns:
+        conn.execute("ALTER TABLE games ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0")
+    for week in conn.execute("SELECT DISTINCT week_id FROM games").fetchall():
+        unordered = conn.execute(
+            "SELECT COUNT(*) AS count FROM games WHERE week_id = ? AND display_order = 0",
+            (week["week_id"],),
+        ).fetchone()["count"]
+        if unordered:
+            game_ids = [row["id"] for row in conn.execute(
+                "SELECT id FROM games WHERE week_id = ? ORDER BY id", (week["week_id"],)
+            ).fetchall()]
+            set_game_order(conn, week["week_id"], game_ids)
 
 
 def seed_database(conn):
@@ -532,7 +546,7 @@ def fetch_week_tiebreakers(conn, week_id):
 
 def fetch_week_games(conn, week_id):
     return conn.execute(
-        "SELECT * FROM games WHERE week_id = ? ORDER BY id",
+        "SELECT * FROM games WHERE week_id = ? ORDER BY display_order, id",
         (week_id,),
     ).fetchall()
 
@@ -1004,7 +1018,10 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             f"<td>{esc(game['spread_text'])}</td>"
             f"<td>{winner_select}</td>"
             f'<td><div class="summary-row"><input form="commissioner-save-form" class="score-input" type="number" min="0" aria-label="{esc(game["away_team"])} final score" name="score_away_{game["id"]}" value="{game["score_away"]}" /><input form="commissioner-save-form" class="score-input" type="number" min="0" aria-label="{esc(game["home_team"])} final score" name="score_home_{game["id"]}" value="{game["score_home"]}" /></div></td>'
-            f'<td><a class="button button--ghost button--small" href="/commissioner/game/{game["id"]}/edit">Edit game</a></td>'
+            f'''<td><div class="game-row-actions"><a class="button button--ghost button--small" href="/commissioner/game/{game["id"]}/edit">Edit</a>
+              <form method="post" action="/commissioner/game/move/{game["id"]}"><button class="button button--ghost button--small" type="submit" name="direction" value="earlier" {"disabled" if game == games[0] else ""}>Up</button></form>
+              <form method="post" action="/commissioner/game/move/{game["id"]}"><button class="button button--ghost button--small" type="submit" name="direction" value="later" {"disabled" if game == games[-1] else ""}>Down</button></form>
+            </div></td>'''
             "</tr>"
         )
     account_rows = []
@@ -1076,7 +1093,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
           </form>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Game</th><th>Matchup</th><th>Kickoff</th><th>Spread</th><th>Winner</th><th>Final score</th><th>Edit</th></tr></thead>
+              <thead><tr><th>Game</th><th>Matchup</th><th>Kickoff</th><th>Spread</th><th>Winner</th><th>Final score</th><th>Manage</th></tr></thead>
               <tbody>{''.join(game_rows)}</tbody>
             </table>
           </div>
@@ -1247,6 +1264,8 @@ def render_game_editor(conn, account, game_id):
 
     favorite_side, spread_value = line_values(game["spread_text"], game["away_team"], game["home_team"])
     kickoff_value = kickoff_input_value(game)
+    ordered_games = fetch_week_games(conn, game["week_id"])
+    game_position = next(index for index, listed_game in enumerate(ordered_games, start=1) if listed_game["id"] == game["id"])
     team_datalist = '<datalist id="ncaa-team-options">' + ''.join(
         f'<option value="{esc(team)}"></option>' for team in NCAA_TEAMS
     ) + "</datalist>"
@@ -1271,6 +1290,12 @@ def render_game_editor(conn, account, game_id):
           <fieldset class="game-editor-group"><legend>Point spread</legend><div class="game-editor-grid">
             <label>Favorite<select name="favorite_side"><option value="away" {"selected" if favorite_side == "away" else ""}>Away team</option><option value="home" {"selected" if favorite_side == "home" else ""}>Home team</option><option value="none" {"selected" if favorite_side == "none" else ""}>Pick 'em</option></select></label>
             <label>Favorite by<input type="number" min="0" step="0.5" name="spread" value="{esc(spread_value)}" placeholder="Example: 3.5" /></label>
+          </div></fieldset>
+          <fieldset class="game-editor-group"><legend>Card order</legend><div class="game-editor-grid">
+            <label>Place this game as
+              <select name="position">{''.join(f'<option value="{position}" {"selected" if position == game_position else ""}>Game {position:02d}</option>' for position in range(1, len(ordered_games) + 1))}</select>
+            </label>
+            <div class="game-editor-help">The rest of the card will renumber automatically when you save.</div>
           </div></fieldset>
           <div class="game-editor-actions"><a class="button button--ghost" href="/commissioner/weekly?week_id={game['week_id']}">Cancel</a><button class="button button--primary" type="submit">Save game changes</button></div>
         </form>
@@ -1715,10 +1740,10 @@ def add_game(conn, form):
     game_count = conn.execute("SELECT COUNT(*) AS count FROM games WHERE week_id = ?", (week["id"],)).fetchone()["count"]
     conn.execute(
         """
-        INSERT INTO games (week_id, code, away_team, home_team, kickoff, site_note, spread_text, winner, score_away, score_home)
-        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, 0)
+        INSERT INTO games (week_id, code, away_team, home_team, kickoff, site_note, spread_text, display_order, winner, score_away, score_home)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, 0)
         """,
-        (week["id"], f"Game {game_count + 1:02d}", away_team, home_team, kickoff, site_note, spread_text),
+        (week["id"], f"Game {game_count + 1:02d}", away_team, home_team, kickoff, site_note, spread_text, game_count + 1),
     )
     conn.commit()
     return True
@@ -1744,7 +1769,37 @@ def update_game(conn, form, game_id):
         "UPDATE games SET away_team = ?, home_team = ?, kickoff = ?, site_note = ?, spread_text = ? WHERE id = ?",
         (away_team, home_team, kickoff, site_note, spread_text, game_id),
     )
+    ordered_game_ids = [listed_game["id"] for listed_game in fetch_week_games(conn, game["week_id"])]
+    ordered_game_ids.remove(game_id)
+    try:
+        position = int(form.get("position") or len(ordered_game_ids) + 1)
+    except ValueError:
+        position = len(ordered_game_ids) + 1
+    ordered_game_ids.insert(max(0, min(position - 1, len(ordered_game_ids))), game_id)
+    set_game_order(conn, game["week_id"], ordered_game_ids)
     conn.commit()
+    return game["week_id"]
+
+
+def set_game_order(conn, week_id, ordered_game_ids):
+    for position, listed_game_id in enumerate(ordered_game_ids, start=1):
+        conn.execute(
+            "UPDATE games SET display_order = ?, code = ? WHERE id = ? AND week_id = ?",
+            (position, f"Game {position:02d}", listed_game_id, week_id),
+        )
+
+
+def move_game(conn, game_id, direction):
+    game = conn.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game or direction not in {"earlier", "later"}:
+        return None
+    ordered_game_ids = [listed_game["id"] for listed_game in fetch_week_games(conn, game["week_id"])]
+    current_position = ordered_game_ids.index(game_id)
+    new_position = current_position - 1 if direction == "earlier" else current_position + 1
+    if 0 <= new_position < len(ordered_game_ids):
+        ordered_game_ids[current_position], ordered_game_ids[new_position] = ordered_game_ids[new_position], ordered_game_ids[current_position]
+        set_game_order(conn, game["week_id"], ordered_game_ids)
+        conn.commit()
     return game["week_id"]
 
 
@@ -1945,6 +2000,19 @@ def app(environ, start_response):
         add_game(conn, form)
         conn.close()
         return redirect(start_response, commissioner_week_url(form))
+
+    if path.startswith("/commissioner/game/move/") and method == "POST":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login?next=commissioner")
+        if not account["is_commissioner"]:
+            conn.close()
+            return redirect(start_response, "/picks")
+        form = read_post_data(environ)
+        game_id = fetch_week_id(path.rsplit("/", 1)[-1])
+        updated_week_id = move_game(conn, game_id, form.get("direction")) if game_id else None
+        conn.close()
+        return redirect(start_response, f"/commissioner/weekly?week_id={updated_week_id}" if updated_week_id else "/commissioner/weekly")
 
     if path.startswith("/commissioner/game/update/") and method == "POST":
         if not account:
