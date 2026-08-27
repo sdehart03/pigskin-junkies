@@ -792,6 +792,10 @@ tbody tr:last-child td {
 .game-editor-help { align-self: end; color: var(--muted); line-height: 1.45; }
 .game-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .game-row-actions form { margin: 0; }
+.commissioner-pick-banner { display: flex; justify-content: space-between; align-items: start; gap: 24px; margin-bottom: 24px; padding: 18px; border: 1px solid rgba(155, 185, 255, 0.25); border-radius: var(--radius-md); background: linear-gradient(135deg, rgba(90, 140, 255, 0.16), rgba(255, 255, 255, 0.025)); }
+.commissioner-pick-banner h2 { margin: 0 0 6px; }
+.commissioner-pick-banner span { color: var(--muted); }
+.commissioner-pick-banner .callout { max-width: 360px; }
 
 .game-builder-grid {
   display: grid;
@@ -905,6 +909,8 @@ tbody tr:last-child td {
   .game-editor-grid { grid-template-columns: 1fr; }
   .game-editor-meta, .game-editor-actions { align-items: stretch; flex-direction: column; }
   .game-editor-actions .button { width: 100%; }
+  .commissioner-pick-banner { flex-direction: column; }
+  .commissioner-pick-banner .callout { max-width: none; }
 
   .game-builder-grid .pick-actions {
     align-items: stretch;
