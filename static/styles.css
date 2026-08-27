@@ -336,6 +336,12 @@ thead th,
   border-color: rgba(90, 140, 255, 0.55);
 }
 
+.leader-card span {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+}
+
 .button {
   display: inline-flex;
   align-items: center;
