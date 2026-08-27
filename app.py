@@ -1000,9 +1000,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             f"<td>{winner_select}</td>"
             f'<td><div class="summary-row"><input form="commissioner-save-form" class="score-input" type="number" min="0" aria-label="{esc(game["away_team"])} final score" name="score_away_{game["id"]}" value="{game["score_away"]}" /><input form="commissioner-save-form" class="score-input" type="number" min="0" aria-label="{esc(game["home_team"])} final score" name="score_home_{game["id"]}" value="{game["score_home"]}" /></div></td>'
             f'''<td><details class="manage-details game-edit-details"><summary>Edit</summary>
-              <form class="inline-form" method="post" action="/commissioner/game/update">
-                <input type="hidden" name="game_id" value="{game["id"]}" />
-                <input type="hidden" name="week_id" value="{week["id"]}" />
+              <form class="inline-form" method="post" action="/commissioner/game/update/{game["id"]}">
                 <label>Away team<input list="ncaa-team-options" name="away_team" value="{esc(game["away_team"])}" required /></label>
                 <label>Home team<input list="ncaa-team-options" name="home_team" value="{esc(game["home_team"])}" required /></label>
                 <label>Kickoff<input type="text" name="kickoff" value="{esc(game["kickoff"])}" required /></label>
@@ -1681,10 +1679,8 @@ def add_game(conn, form):
     return True
 
 
-def update_game(conn, form):
-    week = form_week(conn, form)
-    game_id = int(form.get("game_id") or 0)
-    game = conn.execute("SELECT * FROM games WHERE id = ? AND week_id = ?", (game_id, week["id"])).fetchone() if week else None
+def update_game(conn, form, game_id):
+    game = conn.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
     away_team = (form.get("away_team") or "").strip()
     home_team = (form.get("home_team") or "").strip()
     kickoff = (form.get("kickoff") or "").strip()
@@ -1692,11 +1688,11 @@ def update_game(conn, form):
     favorite_side = form.get("favorite_side") or "none"
     spread_raw = (form.get("spread") or "").strip()
     if not game or not all([away_team, home_team, kickoff]) or away_team.lower() == home_team.lower():
-        return False
+        return None
     try:
         spread = abs(float(spread_raw)) if spread_raw else 0
     except ValueError:
-        return False
+        return None
     favorite = away_team if favorite_side == "away" else home_team if favorite_side == "home" else ""
     spread_text = f"{favorite} -{spread:g}" if favorite and spread else "Pick 'em"
     conn.execute(
@@ -1704,7 +1700,7 @@ def update_game(conn, form):
         (away_team, home_team, kickoff, site_note, spread_text, game_id),
     )
     conn.commit()
-    return True
+    return game["week_id"]
 
 
 def save_picks(conn, account, form):
@@ -1893,7 +1889,7 @@ def app(environ, start_response):
         conn.close()
         return redirect(start_response, commissioner_week_url(form))
 
-    if path == "/commissioner/game/update" and method == "POST":
+    if path.startswith("/commissioner/game/update/") and method == "POST":
         if not account:
             conn.close()
             return redirect(start_response, "/login?next=commissioner")
@@ -1901,9 +1897,10 @@ def app(environ, start_response):
             conn.close()
             return redirect(start_response, "/picks")
         form = read_post_data(environ)
-        update_game(conn, form)
+        game_id = fetch_week_id(path.rsplit("/", 1)[-1])
+        updated_week_id = update_game(conn, form, game_id) if game_id else None
         conn.close()
-        return redirect(start_response, commissioner_week_url(form))
+        return redirect(start_response, f"/commissioner/weekly?week_id={updated_week_id}" if updated_week_id else commissioner_week_url(form))
 
     if path == "/commissioner/account/add" and method == "POST":
         if not account:
