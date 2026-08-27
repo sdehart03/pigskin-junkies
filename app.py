@@ -611,6 +611,12 @@ def line_values(spread_text, away_team, home_team):
     return "none", ""
 
 
+def kickoff_input_value(game):
+    """Format kickoff values for the browser's date-and-time input when possible."""
+    kickoff = game_kickoff(game)
+    return kickoff.strftime("%Y-%m-%dT%H:%M") if kickoff else game["kickoff"]
+
+
 def fetch_account_entries(conn, account_id):
     return conn.execute(
         "SELECT * FROM entries WHERE account_id = ? ORDER BY id",
@@ -998,17 +1004,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             f"<td>{esc(game['spread_text'])}</td>"
             f"<td>{winner_select}</td>"
             f'<td><div class="summary-row"><input form="commissioner-save-form" class="score-input" type="number" min="0" aria-label="{esc(game["away_team"])} final score" name="score_away_{game["id"]}" value="{game["score_away"]}" /><input form="commissioner-save-form" class="score-input" type="number" min="0" aria-label="{esc(game["home_team"])} final score" name="score_home_{game["id"]}" value="{game["score_home"]}" /></div></td>'
-            f'''<td><details class="manage-details game-edit-details"><summary>Edit</summary>
-              <form class="inline-form" method="post" action="/commissioner/game/update/{game["id"]}">
-                <label>Away team<input list="ncaa-team-options" name="away_team" value="{esc(game["away_team"])}" required /></label>
-                <label>Home team<input list="ncaa-team-options" name="home_team" value="{esc(game["home_team"])}" required /></label>
-                <label>Kickoff<input type="text" name="kickoff" value="{esc(game["kickoff"])}" required /></label>
-                <label>Location or note<input type="text" name="site_note" value="{esc(game["site_note"])}" /></label>
-                <label>Favorite<select name="favorite_side"><option value="away" {"selected" if favorite_side == "away" else ""}>Away team</option><option value="home" {"selected" if favorite_side == "home" else ""}>Home team</option><option value="none" {"selected" if favorite_side == "none" else ""}>Pick 'em</option></select></label>
-                <label>Favorite by<input type="number" min="0" step="0.5" name="spread" value="{esc(spread_value)}" /></label>
-                <button class="button button--ghost button--small" type="submit">Save game</button>
-              </form>
-            </details></td>'''
+            f'<td><a class="button button--ghost button--small" href="/commissioner/game/{game["id"]}/edit">Edit game</a></td>'
             "</tr>"
         )
     account_rows = []
@@ -1231,6 +1227,56 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
       </section>
     """
     return render_layout("Pigskin Junkies | Commissioner", body, "/commissioner", account), None
+
+
+def render_game_editor(conn, account, game_id):
+    game = conn.execute(
+        """SELECT games.*, weeks.label AS week_label
+           FROM games JOIN weeks ON weeks.id = games.week_id
+           WHERE games.id = ?""",
+        (game_id,),
+    ).fetchone()
+    if not game:
+        body = """
+          <section class="panel empty-state">
+            <h1>Game not found</h1>
+            <a class="button button--primary" href="/commissioner/weekly">Return to weekly setup</a>
+          </section>
+        """
+        return render_layout("Pigskin Junkies | Game not found", body, "/commissioner", account)
+
+    favorite_side, spread_value = line_values(game["spread_text"], game["away_team"], game["home_team"])
+    kickoff_value = kickoff_input_value(game)
+    team_datalist = '<datalist id="ncaa-team-options">' + ''.join(
+        f'<option value="{esc(team)}"></option>' for team in NCAA_TEAMS
+    ) + "</datalist>"
+    body = f"""
+      <section class="page-hero game-editor-hero">
+        <div><p class="eyebrow">{esc(game['week_label'])} | {esc(game['code'])}</p><h1>Edit matchup</h1><p class="hero__lede">Update the game details participants see on their pick card.</p></div>
+        <a class="button button--ghost" href="/commissioner/weekly?week_id={game['week_id']}">Back to weekly setup</a>
+      </section>
+      <section class="panel game-editor-panel">
+        <div class="game-editor-matchup"><span class="game-editor-matchup__team">{esc(game['away_team'])}</span><span class="game-editor-matchup__at">at</span><span class="game-editor-matchup__team">{esc(game['home_team'])}</span></div>
+        <div class="game-editor-meta"><span>{esc(game_meta(game))}</span><span>Game locks one minute before kickoff.</span></div>
+        {team_datalist}
+        <form class="game-editor-form" method="post" action="/commissioner/game/update/{game['id']}">
+          <fieldset class="game-editor-group"><legend>Matchup</legend><div class="game-editor-grid game-editor-grid--teams">
+            <label>Away team<input list="ncaa-team-options" name="away_team" value="{esc(game['away_team'])}" required /></label>
+            <label>Home team<input list="ncaa-team-options" name="home_team" value="{esc(game['home_team'])}" required /></label>
+          </div></fieldset>
+          <fieldset class="game-editor-group"><legend>Kickoff and location</legend><div class="game-editor-grid">
+            <label>Kickoff<input type="datetime-local" name="kickoff" value="{esc(kickoff_value)}" required /></label>
+            <label>Location or note<input type="text" name="site_note" value="{esc(game['site_note'])}" placeholder="Example: Atlanta, GA or neutral site" /></label>
+          </div></fieldset>
+          <fieldset class="game-editor-group"><legend>Point spread</legend><div class="game-editor-grid">
+            <label>Favorite<select name="favorite_side"><option value="away" {"selected" if favorite_side == "away" else ""}>Away team</option><option value="home" {"selected" if favorite_side == "home" else ""}>Home team</option><option value="none" {"selected" if favorite_side == "none" else ""}>Pick 'em</option></select></label>
+            <label>Favorite by<input type="number" min="0" step="0.5" name="spread" value="{esc(spread_value)}" placeholder="Example: 3.5" /></label>
+          </div></fieldset>
+          <div class="game-editor-actions"><a class="button button--ghost" href="/commissioner/weekly?week_id={game['week_id']}">Cancel</a><button class="button button--primary" type="submit">Save game changes</button></div>
+        </form>
+      </section>
+    """
+    return render_layout(f"Pigskin Junkies | Edit {game['code']}", body, "/commissioner", account)
 
 
 def movement_text(current_rank, previous_rank):
@@ -1852,6 +1898,18 @@ def app(environ, start_response):
             conn.close()
             return redirect(start_response, "/login?next=commissioner")
         body, sentinel = render_commissioner(conn, account)
+        conn.close()
+        return html_response(start_response, body)
+
+    if path.startswith("/commissioner/game/") and path.endswith("/edit") and method == "GET":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login?next=commissioner")
+        if not account["is_commissioner"]:
+            conn.close()
+            return redirect(start_response, "/picks")
+        game_id = fetch_week_id(path.removeprefix("/commissioner/game/").removesuffix("/edit").strip("/"))
+        body = render_game_editor(conn, account, game_id) if game_id else render_game_editor(conn, account, -1)
         conn.close()
         return html_response(start_response, body)
 
