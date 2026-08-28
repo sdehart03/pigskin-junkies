@@ -930,69 +930,126 @@ tbody tr:last-child td {
 
 @media (max-width: 760px) {
   .site-shell,
-  .page-shell {
-    width: min(100% - 20px, 1280px);
-  }
+  .page-shell { width: min(100% - 20px, 1280px); }
 
-  .auth-controls {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .account-menu__panel { right: auto; left: 0; }
+  .site-shell { padding: 12px 0 32px; }
+  .page-shell { gap: 14px; }
 
   .site-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
     gap: 12px;
+    padding-bottom: 14px;
   }
+
+  .brand { min-width: 0; gap: 9px; }
+  .brand__mark { width: 36px; height: 36px; border-radius: 10px; }
+  .brand strong { font-size: 1.05rem; }
+  .brand small { display: none; }
+
+  .auth-controls {
+    grid-column: 2;
+    grid-row: 1;
+    width: auto;
+    justify-content: flex-end;
+  }
+
+  .account-menu summary { padding: 9px 12px; }
+  .account-menu__panel { right: 0; left: auto; min-width: 205px; }
 
   .main-nav {
-    width: 100%;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: calc(100% + 20px);
+    margin: 0 -10px;
+    padding: 2px 10px 6px;
+    gap: 4px;
     overflow-x: auto;
-    padding-bottom: 2px;
+    scrollbar-width: none;
   }
 
-  .main-nav__link {
-    white-space: nowrap;
-  }
+  .main-nav::-webkit-scrollbar { display: none; }
+  .main-nav__link { padding: 8px 9px; white-space: nowrap; font-size: 0.94rem; }
 
   .hero__copy h1,
-  .page-hero h1 {
-    font-size: 2.35rem;
+  .page-hero h1 { font-size: clamp(2rem, 10vw, 2.55rem); }
+
+  .hero__copy,
+  .hero__card,
+  .panel,
+  .page-hero { padding: 16px; border-radius: 16px; }
+
+  .hero__lede { margin: 12px 0 18px; font-size: 1rem; }
+
+  .hero__actions,
+  .page-hero__actions,
+  .section-heading,
+  .form-row,
+  .pick-actions { align-items: stretch; flex-direction: column; }
+
+  .hero__actions .button,
+  .pick-actions .button,
+  .page-hero__actions .button { width: 100%; min-height: 48px; }
+
+  .page-hero__actions { width: 100%; }
+  .page-hero__actions .pill,
+  .page-hero__actions .badge { justify-content: center; }
+  .section-heading { gap: 10px; }
+
+  .home-week-card { gap: 12px; }
+  .home-week-card__label { font-size: 1.4rem; }
+  .home-week-card__item { padding-top: 12px; }
+
+  .table-wrap {
+    width: calc(100% + 32px);
+    margin: 0 -16px;
+    padding: 0 16px 4px;
+    -webkit-overflow-scrolling: touch;
   }
 
-  .pick-game-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
+  table { font-size: 0.94rem; }
+  th, td { padding: 11px 9px; }
 
-  .pick-options {
-    grid-template-columns: 1fr;
-  }
+  .pick-form { gap: 14px; }
+  .pick-game-grid { grid-template-columns: 1fr; gap: 12px; }
+  .pick-game-card { padding: 12px; }
+  .pick-game-card__meta { font-size: 0.9rem; line-height: 1.4; }
+  .pick-options { grid-template-columns: 1fr; }
+  .pick-option { min-height: 58px; padding: 12px; }
+  .account-banner { align-items: flex-start; flex-direction: column; }
+  .account-banner .pill { align-self: flex-start; }
+  .callout { flex-basis: auto; }
 
-  .commissioner-hub__card {
-    min-height: 0;
-  }
+  .commissioner-hub__card { min-height: 0; padding: 20px; }
+  .commissioner-workspace-nav { gap: 8px; margin-bottom: 14px; }
+  .commissioner-workspace-nav .button { flex: 1 1 calc(50% - 8px); }
 
-  .game-builder-grid {
-    grid-template-columns: 1fr;
-  }
-
+  .game-builder-grid,
   .game-editor-grid { grid-template-columns: 1fr; }
-  .game-editor-meta, .game-editor-actions { align-items: stretch; flex-direction: column; }
+
+  .game-editor-meta,
+  .game-editor-actions { align-items: stretch; flex-direction: column; }
+
   .game-editor-actions .button { width: 100%; }
+  .game-editor-panel { padding: 16px; }
+  .game-editor-group { padding: 14px; }
+  .game-editor-matchup { padding: 16px; }
+  .game-editor-matchup__team { font-size: 1.35rem; }
   .commissioner-pick-banner { flex-direction: column; }
   .commissioner-pick-banner .callout { max-width: none; }
+  .game-builder-grid .pick-actions { align-items: stretch; }
 
-  .game-builder-grid .pick-actions {
-    align-items: stretch;
-  }
-
-  .week-switcher {
-    flex-direction: column;
-  }
-
+  .week-switcher { flex-direction: column; }
   .week-switcher label,
-  .week-switcher .button {
-    width: 100%;
-  }
+  .week-switcher .button { width: 100%; }
+
+  .trend-labels { gap: 8px; font-size: 0.86rem; }
+  .trend-labels span:last-child { text-align: right; }
+}
+
+@media (max-width: 390px) {
+  .account-menu__trigger { max-width: 112px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .commissioner-workspace-nav .button { flex-basis: 100%; }
+  .pill, .badge { font-size: 0.8rem; }
 }
