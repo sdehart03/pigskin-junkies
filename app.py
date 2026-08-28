@@ -733,7 +733,10 @@ def compute_week_results(conn, week_id):
     results = []
     for entry in entries:
         pick = picks_by_entry.get(entry["id"])
-        if not pick:
+        entry_selections = selections.get(entry["id"], {})
+        # A participant can save progress, but an entry only joins the standings
+        # after every game on the card has a recorded selection.
+        if not pick or len(entry_selections) != len(games):
             results.append(
                 {
                     "entry_id": entry["id"],
@@ -748,7 +751,7 @@ def compute_week_results(conn, week_id):
             continue
         wins = 0
         for game in games:
-            if has_game_started(game) and selections.get(entry["id"], {}).get(game["id"]) == game["winner"]:
+            if has_game_started(game) and entry_selections.get(game["id"]) == game["winner"]:
                 wins += 1
         results.append(
             {
@@ -1433,7 +1436,7 @@ def render_picks(conn, account, message="", active_entry_id=None):
             for team in (game["away_team"], game["home_team"]):
                 checked = "checked" if selections.get(game["id"]) == team else ""
                 options.append(
-                    f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {checked} required /><span>{esc(team)}</span></label>'
+                    f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {checked} /><span>{esc(team)}</span></label>'
                 )
         cards.append(
             f'<fieldset class="pick-game-card {"pick-game-card--locked" if game_locked else ""}"><legend>{esc(game["code"])}: {esc(game["away_team"])} at {esc(game["home_team"])}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{"".join(options)}</div></fieldset>'
@@ -1464,7 +1467,7 @@ def render_picks(conn, account, message="", active_entry_id=None):
           {entry_select}
           <div class="pick-game-grid">{''.join(cards)}</div>
           <div class="form-row tiebreaker-row">
-            {''.join(f'<label class="tiebreaker-field">{esc(tb["prompt"])}<input type="number" min="0" name="tb_{tb["position"]}" value="{esc(tiebreaker_value(pick, tb["position"]))}" required /></label>' for tb in tiebreakers)}
+            {''.join(f'<label class="tiebreaker-field">{esc(tb["prompt"])}<input type="number" min="0" name="tb_{tb["position"]}" value="{esc(tiebreaker_value(pick, tb["position"]))}" /></label>' for tb in tiebreakers)}
           </div>
           <div class="pick-actions"><button class="button button--primary" type="submit">Save picks</button><span class="pill">{esc(active_entry["display_name"])} is active</span></div>
         </form>
@@ -1997,7 +2000,10 @@ def save_picks(conn, account, form):
             (pick_id, game["id"], selected),
         )
     conn.commit()
-    return "Your picks have been saved."
+    saved_count = conn.execute(
+        "SELECT COUNT(*) AS count FROM pick_items WHERE pick_id = ?", (pick_id,)
+    ).fetchone()["count"]
+    return f"Your progress is saved: {saved_count} of {len(games)} picks recorded."
 
 
 def save_commissioner_picks(conn, form):
