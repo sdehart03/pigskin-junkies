@@ -1452,6 +1452,42 @@ def render_picks(conn, account, message="", active_entry_id=None):
             + "</select></label></div>"
         )
     notice = f'<div class="alert alert--success">{esc(message)}</div>' if message else ""
+    autosave_script = """
+      <script>
+        (() => {
+          const form = document.querySelector(".pick-form");
+          const status = document.querySelector(".autosave-status");
+          if (!form || !status || !window.fetch) return;
+
+          let saveQueue = Promise.resolve();
+          form.querySelectorAll('input[type="radio"][name^="pick_"]').forEach((input) => {
+            input.addEventListener("change", () => {
+              const entryField = form.querySelector('[name="entry_id"]');
+              const payload = new URLSearchParams({
+                entry_id: entryField ? entryField.value : form.dataset.entryId,
+                game_id: input.name.replace("pick_", ""),
+                selected_team: input.value,
+              });
+              status.textContent = "Saving pick...";
+              status.classList.remove("autosave-status--error");
+              saveQueue = saveQueue.catch(() => {}).then(async () => {
+                const response = await fetch("/picks/autosave", {
+                  method: "POST",
+                  headers: {"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
+                  body: payload.toString(),
+                });
+                const message = await response.text();
+                if (!response.ok) throw new Error(message || "Unable to save that pick.");
+                status.textContent = message;
+              }).catch((error) => {
+                status.textContent = error.message || "Unable to save that pick. Please try again.";
+                status.classList.add("autosave-status--error");
+              });
+            });
+          });
+        })();
+      </script>
+    """
     body = f"""
       <section class="page-hero">
         <div><p class="eyebrow">Participant view</p><h1>Submit your Pigskin Junkies picks</h1></div>
@@ -1459,7 +1495,7 @@ def render_picks(conn, account, message="", active_entry_id=None):
       </section>
       <section class="panel">
         {notice}
-        <form class="pick-form" method="post" action="/picks">
+        <form class="pick-form" method="post" action="/picks" data-entry-id="{active_entry['id']}">
           <div class="form-row">
             <div class="account-banner"><div><strong>{esc(account["name"])}</strong><div class="helper-copy">{esc(account["email"])}</div></div><span class="pill">{len(entries)} entries linked</span></div>
             <div class="callout">Each game locks one minute before its own kickoff. Your picks stay private from everyone else until that game begins.</div>
@@ -1469,9 +1505,10 @@ def render_picks(conn, account, message="", active_entry_id=None):
           <div class="form-row tiebreaker-row">
             {''.join(f'<label class="tiebreaker-field">{esc(tb["prompt"])}<input type="number" min="0" name="tb_{tb["position"]}" value="{esc(tiebreaker_value(pick, tb["position"]))}" /></label>' for tb in tiebreakers)}
           </div>
-          <div class="pick-actions"><button class="button button--primary" type="submit">Save picks</button><span class="pill">{esc(active_entry["display_name"])} is active</span></div>
+          <div class="pick-actions"><button class="button button--primary" type="submit">Save tiebreakers</button><span class="autosave-status" aria-live="polite">Picks save automatically.</span><span class="pill">{esc(active_entry["display_name"])} is active</span></div>
         </form>
       </section>
+      {autosave_script}
     """
     return render_layout("Pigskin Junkies | Submit Picks", body, "/picks", account)
 
@@ -2006,6 +2043,49 @@ def save_picks(conn, account, form):
     return f"Your progress is saved: {saved_count} of {len(games)} picks recorded."
 
 
+def autosave_pick(conn, account, form):
+    """Save one participant selection without changing the rest of the card."""
+    week = fetch_current_week(conn)
+    entries = fetch_account_entries(conn, account["id"])
+    entry_ids = {str(entry["id"]) for entry in entries}
+    entry_id = form.get("entry_id") or (str(entries[0]["id"]) if entries else None)
+    if entry_id not in entry_ids:
+        return None, "That entry does not belong to the signed-in account."
+
+    game_id = fetch_week_id(form.get("game_id"))
+    game = conn.execute(
+        "SELECT * FROM games WHERE id = ? AND week_id = ?", (game_id, week["id"])
+    ).fetchone()
+    selected_team = form.get("selected_team")
+    if not game or selected_team not in {game["away_team"], game["home_team"]}:
+        return None, "That pick is no longer available."
+    if is_game_locked(game):
+        return None, "This game is locked, so its pick can no longer be changed."
+
+    current = conn.execute(
+        "SELECT * FROM picks WHERE week_id = ? AND entry_id = ?", (week["id"], entry_id)
+    ).fetchone()
+    if current:
+        pick_id = current["id"]
+        conn.execute("UPDATE picks SET submitted_at = ? WHERE id = ?", (now_iso(), pick_id))
+    else:
+        pick_id = conn.execute(
+            """INSERT INTO picks (week_id, entry_id, submitted_at, tiebreaker_1, tiebreaker_2, tiebreaker_3)
+               VALUES (?, ?, ?, 0, 0, 0)""",
+            (week["id"], entry_id, now_iso()),
+        ).lastrowid
+    conn.execute(
+        """INSERT INTO pick_items (pick_id, game_id, selected_team) VALUES (?, ?, ?)
+           ON CONFLICT(pick_id, game_id) DO UPDATE SET selected_team = excluded.selected_team""",
+        (pick_id, game["id"], selected_team),
+    )
+    conn.commit()
+    saved_count = conn.execute(
+        "SELECT COUNT(*) AS count FROM pick_items WHERE pick_id = ?", (pick_id,)
+    ).fetchone()["count"]
+    return True, f"Pick saved. {saved_count} of {len(fetch_week_games(conn, week['id']))} games selected."
+
+
 def save_commissioner_picks(conn, form):
     week = fetch_week(conn, form.get("week_id"))
     entry_id = fetch_week_id(form.get("entry_id"))
@@ -2366,6 +2446,14 @@ def app(environ, start_response):
         body = render_picks(conn, account, message=message, active_entry_id=int(entry_id) if entry_id else get_active_entry_id(environ, conn, account))
         conn.close()
         return html_response(start_response, body, headers=headers)
+
+    if path == "/picks/autosave" and method == "POST":
+        if not account:
+            conn.close()
+            return text_response(start_response, "Please sign in again before saving picks.", status="401 Unauthorized")
+        saved, message = autosave_pick(conn, account, read_post_data(environ))
+        conn.close()
+        return text_response(start_response, message, status="200 OK" if saved else "400 Bad Request")
 
     if path == "/leaderboard" and method == "GET":
         body = render_leaderboard(conn, account)
