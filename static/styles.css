@@ -1090,8 +1090,8 @@ tbody tr:last-child td {
   .player-pick-card__details small { color: var(--muted); font-size: 0.78rem; }
 
   .commissioner-hub__card { min-height: 0; padding: 20px; }
-  .participants-desktop-table { display: none; }
-  .commissioner-mobile-list { display: grid; gap: 12px; }
+  .participants-desktop-table { display: none !important; }
+  .commissioner-mobile-list { display: grid !important; gap: 12px; }
   .commissioner-account-card {
     display: grid;
     gap: 12px;
