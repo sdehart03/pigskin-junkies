@@ -345,6 +345,7 @@ thead th,
 
 .leaderboard-mobile-list { display: none; }
 .player-picks-mobile { display: none; }
+.commissioner-mobile-list { display: none; }
 
 .tiebreaker-field input {
   width: 7.5rem;
@@ -1089,6 +1090,22 @@ tbody tr:last-child td {
   .player-pick-card__details small { color: var(--muted); font-size: 0.78rem; }
 
   .commissioner-hub__card { min-height: 0; padding: 20px; }
+  .participants-desktop-table { display: none; }
+  .commissioner-mobile-list { display: grid; gap: 12px; }
+  .commissioner-account-card {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.035);
+  }
+  .commissioner-account-card__heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .commissioner-account-card__heading strong { font-family: "Space Grotesk", sans-serif; font-size: 1.1rem; }
+  .commissioner-account-card__email { color: var(--muted); overflow-wrap: anywhere; }
+  .commissioner-account-card small { display: block; margin-bottom: 7px; color: var(--muted); font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+  .commissioner-account-card .manage-details { padding-top: 12px; border-top: 1px solid var(--line); }
+  .commissioner-account-card .inline-form label { min-width: 0; }
   .commissioner-workspace-nav {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
