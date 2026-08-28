@@ -1012,9 +1012,9 @@ tbody tr:last-child td {
   .pick-actions .button,
   .page-hero__actions .button { width: 100%; min-height: 48px; }
 
-  .page-hero__actions { width: 100%; }
+  .page-hero__actions { width: 100%; min-width: 0; }
   .page-hero__actions .pill,
-  .page-hero__actions .badge { justify-content: center; }
+  .page-hero__actions .badge { justify-content: center; max-width: 100%; text-align: center; white-space: normal; }
   .section-heading { gap: 10px; }
 
   .home-week-card { gap: 12px; }
@@ -1089,8 +1089,20 @@ tbody tr:last-child td {
   .player-pick-card__details small { color: var(--muted); font-size: 0.78rem; }
 
   .commissioner-hub__card { min-height: 0; padding: 20px; }
-  .commissioner-workspace-nav { gap: 8px; margin-bottom: 14px; }
-  .commissioner-workspace-nav .button { flex: 1 1 calc(50% - 8px); }
+  .commissioner-workspace-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 14px;
+    min-width: 0;
+  }
+  .commissioner-workspace-nav .button {
+    min-width: 0;
+    min-height: 46px;
+    padding: 9px 10px;
+    text-align: center;
+    white-space: normal;
+  }
 
   .game-builder-grid,
   .game-editor-grid { grid-template-columns: 1fr; }
@@ -1107,9 +1119,52 @@ tbody tr:last-child td {
   .commissioner-pick-banner .callout { max-width: none; }
   .game-builder-grid .pick-actions { align-items: stretch; }
 
-  .week-switcher { flex-direction: column; }
+  .week-switcher {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 14px;
+    min-width: 0;
+    overflow: hidden;
+  }
   .week-switcher label,
-  .week-switcher .button { width: 100%; }
+  .week-switcher .button,
+  .week-switcher span { width: 100%; min-width: 0; }
+  .week-switcher span { overflow-wrap: anywhere; }
+
+  .commissioner-weekly-grid,
+  .commissioner-weekly-grid .panel,
+  .commissioner-weekly-grid .form-card,
+  .commissioner-weekly-grid .form-row,
+  .commissioner-weekly-grid label,
+  .commissioner-pick-banner,
+  .commissioner-pick-banner > * { min-width: 0; }
+
+  .commissioner-weekly-grid .form-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .commissioner-weekly-grid input,
+  .commissioner-weekly-grid select,
+  .week-switcher input,
+  .week-switcher select {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  input[type="datetime-local"] {
+    min-width: 0;
+    min-inline-size: 0;
+    padding: 10px;
+    font-size: 16px;
+  }
+
+  .commissioner-weekly-grid .table-wrap,
+  .commissioner-hub + .panel .table-wrap {
+    max-width: calc(100vw - 20px);
+  }
 
   .trend-labels { gap: 8px; font-size: 0.86rem; }
   .trend-labels span:last-child { text-align: right; }
@@ -1117,6 +1172,6 @@ tbody tr:last-child td {
 
 @media (max-width: 390px) {
   .account-menu__trigger { max-width: 112px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .commissioner-workspace-nav .button { flex-basis: 100%; }
+  .commissioner-workspace-nav { grid-template-columns: 1fr; }
   .pill, .badge { font-size: 0.8rem; }
 }
