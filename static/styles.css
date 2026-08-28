@@ -344,6 +344,7 @@ thead th,
 }
 
 .leaderboard-mobile-list { display: none; }
+.player-picks-mobile { display: none; }
 
 .tiebreaker-field input {
   width: 7.5rem;
@@ -1055,6 +1056,26 @@ tbody tr:last-child td {
   .leaderboard-mobile-weeks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
   .leaderboard-mobile-weeks span { padding: 5px 8px; border-radius: 999px; background: rgba(90, 140, 255, 0.12); color: var(--muted); font-size: 0.8rem; }
   .leaderboard-mobile-weeks strong { color: var(--ink); }
+
+  .player-picks-desktop { display: none; }
+  .player-picks-mobile { display: grid; gap: 10px; }
+  .player-summary .summary-card,
+  .player-tiebreakers .summary-card { display: grid; gap: 5px; }
+  .player-summary .summary-card span,
+  .player-tiebreakers .summary-card span { color: var(--muted); }
+  .player-pick-card {
+    display: grid;
+    gap: 8px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .player-pick-card__heading { display: flex; justify-content: space-between; gap: 12px; }
+  .player-pick-card__details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .player-pick-card__details span { display: grid; gap: 3px; overflow-wrap: anywhere; }
+  .player-pick-card__details small { color: var(--muted); font-size: 0.78rem; }
 
   .commissioner-hub__card { min-height: 0; padding: 20px; }
   .commissioner-workspace-nav { gap: 8px; margin-bottom: 14px; }
