@@ -950,11 +950,14 @@ tbody tr:last-child td {
 }
 
 @media (max-width: 760px) {
+  html,
+  body { max-width: 100%; overflow-x: clip; }
+
   .site-shell,
-  .page-shell { width: min(100% - 20px, 1280px); }
+  .page-shell { width: min(100% - 20px, 1280px); min-width: 0; max-width: 100%; }
 
   .site-shell { padding: 12px 0 32px; }
-  .page-shell { gap: 14px; }
+  .page-shell { gap: 14px; overflow-x: clip; }
 
   .site-header {
     display: grid;
