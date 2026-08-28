@@ -1058,12 +1058,34 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             "</tr>"
         )
     account_rows = []
+    account_mobile_cards = []
     for item in accounts_with_entries:
         managed = item["account"]
         entries_html = "".join(
             f'<div class="entry-pill">{esc(entry["display_name"])}</div>'
             for entry in item["entries"]
         ) or '<div class="entry-pill">No entries</div>'
+        account_actions = f'''
+          <details class="manage-details">
+            <summary>Manage account</summary>
+            <form class="inline-form" method="post" action="/commissioner/account/update">
+              <input type="hidden" name="account_id" value="{managed["id"]}" />
+              <label>Name<input type="text" name="name" value="{esc(managed["name"])}" required /></label>
+              <label>Email<input type="email" name="email" value="{esc(managed["email"])}" required /></label>
+              <label>New password<input type="text" name="password" placeholder="Leave blank to keep current" /></label>
+              <label class="checkbox-row"><input type="checkbox" name="is_commissioner" value="1" {'checked' if managed["is_commissioner"] else ''} /> Commissioner</label>
+              <button class="button button--ghost button--small" type="submit">Save account</button>
+            </form>
+            <form class="inline-form inline-form--compact" method="post" action="/commissioner/entry/add">
+              <input type="hidden" name="account_id" value="{managed["id"]}" />
+              <label>New entry name<input type="text" name="display_name" placeholder="Add another entry" required /></label>
+              <button class="button button--ghost button--small" type="submit">Add entry</button>
+            </form>
+            <form class="inline-form inline-form--compact" method="post" action="/commissioner/account/delete">
+              <input type="hidden" name="account_id" value="{managed["id"]}" />
+              <button class="button button--danger button--small" type="submit" {'disabled title="You cannot delete the account you are currently using."' if managed["id"] == account["id"] else ''}>Delete account</button>
+            </form>
+          </details>'''
         account_rows.append(
             f"""
             <tr>
@@ -1071,30 +1093,17 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
               <td>{esc(managed["email"])}</td>
               <td>{'Commissioner' if managed["is_commissioner"] else 'Participant'}</td>
               <td><div class="entry-pill-wrap">{entries_html}</div></td>
-              <td>
-                <details class="manage-details">
-                  <summary>Manage account</summary>
-                  <form class="inline-form" method="post" action="/commissioner/account/update">
-                    <input type="hidden" name="account_id" value="{managed["id"]}" />
-                    <label>Name<input type="text" name="name" value="{esc(managed["name"])}" required /></label>
-                    <label>Email<input type="email" name="email" value="{esc(managed["email"])}" required /></label>
-                    <label>New password<input type="text" name="password" placeholder="Leave blank to keep current" /></label>
-                    <label class="checkbox-row"><input type="checkbox" name="is_commissioner" value="1" {'checked' if managed["is_commissioner"] else ''} /> Commissioner</label>
-                    <button class="button button--ghost button--small" type="submit">Save account</button>
-                  </form>
-                  <form class="inline-form inline-form--compact" method="post" action="/commissioner/entry/add">
-                    <input type="hidden" name="account_id" value="{managed["id"]}" />
-                    <label>New entry name<input type="text" name="display_name" placeholder="Add another entry" required /></label>
-                    <button class="button button--ghost button--small" type="submit">Add entry</button>
-                  </form>
-                  <form class="inline-form inline-form--compact" method="post" action="/commissioner/account/delete">
-                    <input type="hidden" name="account_id" value="{managed["id"]}" />
-                    <button class="button button--danger button--small" type="submit" {'disabled title="You cannot delete the account you are currently using."' if managed["id"] == account["id"] else ''}>Delete account</button>
-                  </form>
-                </details>
-              </td>
+              <td>{account_actions}</td>
             </tr>
             """
+        )
+        account_mobile_cards.append(
+            f'''<article class="commissioner-account-card">
+              <div class="commissioner-account-card__heading"><strong>{esc(managed["name"])}</strong><span class="pill">{'Commissioner' if managed["is_commissioner"] else 'Participant'}</span></div>
+              <span class="commissioner-account-card__email">{esc(managed["email"])}</span>
+              <div><small>Entries</small><div class="entry-pill-wrap">{entries_html}</div></div>
+              {account_actions}
+            </article>'''
         )
     week_rows = []
     for listed_week in weeks:
@@ -1166,12 +1175,13 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
     participants_section = f"""
       <section class="panel">
         <div class="section-heading"><div><p class="section-label">Accounts and entries</p><h2>Participant management</h2></div></div>
-        <div class="table-wrap">
+        <div class="table-wrap participants-desktop-table">
           <table>
             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Entries</th><th>Manage</th></tr></thead>
             <tbody>{''.join(account_rows)}</tbody>
           </table>
         </div>
+        <div class="commissioner-mobile-list">{''.join(account_mobile_cards)}</div>
         <details class="commissioner-disclosure panel-subsection">
           <summary>Add participant</summary>
           <form class="form-card" method="post" action="/commissioner/account/add">
