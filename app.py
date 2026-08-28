@@ -1324,7 +1324,7 @@ def render_commissioner_picks(conn, account, week_id=None, entry_id=None, messag
         <form class="pick-form" method="post" action="/commissioner/picks/save">
           <input type="hidden" name="week_id" value="{week['id']}" /><input type="hidden" name="entry_id" value="{selected_entry['id']}" />
           <div class="pick-game-grid">{''.join(cards)}</div>
-          <div class="form-row">{''.join(f'<label>{esc(tb["prompt"])}<input type="number" min="0" name="tb_{tb["position"]}" value="{esc(tiebreaker_value(pick, tb["position"]))}" required /></label>' for tb in tiebreakers)}</div>
+          <div class="form-row tiebreaker-row">{''.join(f'<label class="tiebreaker-field">{esc(tb["prompt"])}<input type="number" min="0" name="tb_{tb["position"]}" value="{esc(tiebreaker_value(pick, tb["position"]))}" required /></label>' for tb in tiebreakers)}</div>
           <div class="pick-actions"><button class="button button--primary" type="submit">Save commissioner changes</button><span class="pill">{esc(selected_entry['display_name'])} is selected</span></div>
         </form>
       </section>
@@ -1463,8 +1463,8 @@ def render_picks(conn, account, message="", active_entry_id=None):
           </div>
           {entry_select}
           <div class="pick-game-grid">{''.join(cards)}</div>
-          <div class="form-row">
-            {''.join(f'<label>{esc(tb["prompt"])}<input type="number" min="0" name="tb_{tb["position"]}" value="{esc(tiebreaker_value(pick, tb["position"]))}" required /></label>' for tb in tiebreakers)}
+          <div class="form-row tiebreaker-row">
+            {''.join(f'<label class="tiebreaker-field">{esc(tb["prompt"])}<input type="number" min="0" name="tb_{tb["position"]}" value="{esc(tiebreaker_value(pick, tb["position"]))}" required /></label>' for tb in tiebreakers)}
           </div>
           <div class="pick-actions"><button class="button button--primary" type="submit">Save picks</button><span class="pill">{esc(active_entry["display_name"])} is active</span></div>
         </form>
@@ -1485,18 +1485,29 @@ def render_leaderboard(conn, account):
     season = compute_season_results(conn)
     weeks = conn.execute("SELECT * FROM weeks ORDER BY id").fetchall()
     weekly_rows = []
+    weekly_mobile_cards = []
     for item in results:
         previous = compute_previous_rank(conn, week["id"], item["entry_id"])
+        status_text = movement_text(item["rank"], previous) if item["submitted"] else "Missing picks"
+        status_class = "status--good" if item["submitted"] else "status--warn"
         weekly_rows.append(
             "<tr>"
             f"<td>#{item['rank']}</td>"
             f'<td><a class="leaderboard-link" href="/player?entry_id={item["entry_id"]}&week_id={week["id"]}">{esc(item["display_name"])}</a></td>'
             f"<td>{item['wins']}/{item['total_games']}</td>"
             f"<td>{item['tb_gap'] if item['submitted'] else '-'}</td>"
-            f'<td class="status {"status--good" if item["submitted"] else "status--warn"}">{movement_text(item["rank"], previous) if item["submitted"] else "Missing picks"}</td>'
+            f'<td class="status {status_class}">{status_text}</td>'
             "</tr>"
         )
+        weekly_mobile_cards.append(
+            f'''<a class="leaderboard-mobile-card" href="/player?entry_id={item["entry_id"]}&week_id={week["id"]}">
+              <div><span class="leaderboard-mobile-card__rank">#{item["rank"]}</span><strong>{esc(item["display_name"])}</strong></div>
+              <div class="leaderboard-mobile-card__score"><span>Weekly points</span><strong>{item["wins"]}/{item["total_games"]}</strong></div>
+              <span class="status {status_class}">{status_text}</span>
+            </a>'''
+        )
     season_rows = []
+    season_mobile_cards = []
     for row in season:
         season_rows.append(
             "<tr>"
@@ -1504,6 +1515,13 @@ def render_leaderboard(conn, account):
             f'<td><a class="leaderboard-link" href="/player?entry_id={row["entry_id"]}&week_id={week["id"]}">{esc(row["display_name"])}</a></td>'
             + "".join(f"<td>{item['wins'] if item['wins'] is not None else '-'}</td>" for item in row["weekly"])
             + f"<td><strong>{row['total']}</strong></td></tr>"
+        )
+        season_mobile_cards.append(
+            f'''<article class="leaderboard-mobile-card leaderboard-mobile-card--season">
+              <div><span class="leaderboard-mobile-card__rank">#{row["rank"]}</span><strong>{esc(row["display_name"])}</strong></div>
+              <div class="leaderboard-mobile-card__score"><span>Season total</span><strong>{row["total"]}</strong></div>
+              <div class="leaderboard-mobile-weeks">{''.join(f'<span>{esc(item["label"])} <strong>{item["wins"] if item["wins"] is not None else "-"}</strong></span>' for item in row["weekly"])}</div>
+            </article>'''
         )
     body = f"""
       <section class="page-hero">
@@ -1513,11 +1531,13 @@ def render_leaderboard(conn, account):
       <section class="dashboard-grid">
         <article class="panel">
           <div class="section-heading"><div><p class="section-label">This week</p><h2>Weekly leaderboard</h2></div><span class="badge">Click a name to inspect picks</span></div>
-          <div class="table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th><th>Weekly points</th><th>Tiebreak gap</th><th>Status</th></tr></thead><tbody>{''.join(weekly_rows)}</tbody></table></div>
+          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th><th>Weekly points</th><th>Tiebreak gap</th><th>Status</th></tr></thead><tbody>{''.join(weekly_rows)}</tbody></table></div>
+          <div class="leaderboard-mobile-list">{''.join(weekly_mobile_cards)}</div>
         </article>
         <article class="panel">
           <div class="section-heading"><div><p class="section-label">Whole season</p><h2>Season standings</h2></div><span class="badge">Auto-totaled</span></div>
-          <div class="table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th>{''.join(f'<th>{esc(item["label"])}</th>' for item in weeks)}<th>Total</th></tr></thead><tbody>{''.join(season_rows)}</tbody></table></div>
+          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th>{''.join(f'<th>{esc(item["label"])}</th>' for item in weeks)}<th>Total</th></tr></thead><tbody>{''.join(season_rows)}</tbody></table></div>
+          <div class="leaderboard-mobile-list">{''.join(season_mobile_cards)}</div>
         </article>
       </section>
     """
