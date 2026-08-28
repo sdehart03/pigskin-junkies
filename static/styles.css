@@ -689,6 +689,17 @@ tbody tr:last-child td {
   color: var(--muted);
 }
 
+.autosave-status {
+  align-self: center;
+  color: var(--success);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.autosave-status--error {
+  color: var(--danger);
+}
+
 .entry-pill-wrap {
   display: flex;
   flex-wrap: wrap;
