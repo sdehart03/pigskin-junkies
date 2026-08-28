@@ -1623,6 +1623,7 @@ def render_player(conn, account, entry_id, week_id):
     tiebreakers = fetch_week_tiebreakers(conn, week["id"])
     result = next((row for row in compute_week_results(conn, week["id"]) if row["entry_id"] == entry["id"]), None)
     rows = []
+    mobile_rows = []
     for game in games:
         visible = has_game_started(game)
         selected = selections.get(game["id"], "-") if visible else "Hidden until kickoff"
@@ -1639,6 +1640,14 @@ def render_player(conn, account, entry_id, week_id):
             f'<td class="status {status_class}">{status}</td>'
             "</tr>"
         )
+        mobile_rows.append(
+            f'''<article class="player-pick-card">
+              <div class="player-pick-card__heading"><strong>{esc(game["code"])}</strong><span class="status {status_class}">{status}</span></div>
+              <strong>{esc(game["away_team"])} at {esc(game["home_team"])}</strong>
+              <span class="helper-copy">{esc(game_meta(game))}</span>
+              <div class="player-pick-card__details"><span><small>Pick</small>{esc(selected)}</span><span><small>ATS winner</small>{esc(winner or "TBD")}</span></div>
+            </article>'''
+        )
     body = f"""
       <section class="page-hero">
         <div><p class="eyebrow">Participant detail</p><h1>{esc(entry["display_name"])} picks</h1></div>
@@ -1647,7 +1656,7 @@ def render_player(conn, account, entry_id, week_id):
       <section class="dashboard-grid">
         <article class="panel">
           <p class="section-label">Snapshot</p><h2>Entry summary</h2>
-          <div class="stack">
+          <div class="stack player-summary">
             <div class="summary-card"><strong>Weekly rank</strong><span>{'#' + str(result['rank']) if result else 'No rank'}</span></div>
             <div class="summary-card"><strong>Weekly points</strong><span>{f"{result['wins']}/{result['total_games']}" if result and result['submitted'] else 'No picks submitted'}</span></div>
             <div class="summary-card"><strong>Submitted</strong><span>{esc(result['submitted_at']) if result and result['submitted_at'] else 'Not submitted'}</span></div>
@@ -1655,14 +1664,15 @@ def render_player(conn, account, entry_id, week_id):
         </article>
         <article class="panel">
           <p class="section-label">Tiebreakers</p><h2>Guesses</h2>
-          <div class="stack">
+          <div class="stack player-tiebreakers">
             {''.join(f'<div class="summary-card"><strong>{esc(tb["prompt"])}</strong><span>{esc(tiebreaker_value(pick, tb["position"]) or "-")}</span></div>' for tb in tiebreakers)}
           </div>
         </article>
       </section>
       <section class="panel">
         <div class="section-heading"><div><p class="section-label">Every game</p><h2>Weekly picks</h2></div><span class="badge">{esc(week["label"])}</span></div>
-        <div class="table-wrap"><table><thead><tr><th>Game</th><th>Matchup</th><th>Pick</th><th>Winner</th><th>Result</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>
+        <div class="player-picks-desktop table-wrap"><table><thead><tr><th>Game</th><th>Matchup</th><th>Pick</th><th>Winner</th><th>Result</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>
+        <div class="player-picks-mobile">{''.join(mobile_rows)}</div>
       </section>
     """
     return render_layout("Pigskin Junkies | Entry Detail", body, "/leaderboard", account)
