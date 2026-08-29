@@ -325,6 +325,16 @@ thead th,
   padding: 14px;
 }
 
+.missing-player {
+  display: grid;
+  gap: 3px;
+}
+
+.missing-player span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .jump-card,
 .leader-card {
   text-decoration: none;
