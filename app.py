@@ -1449,6 +1449,17 @@ def render_picks(conn, account, message="", active_entry_id=None):
     pick, selections = fetch_pick_bundle(conn, week["id"], active_entry["id"])
     tiebreakers = fetch_week_tiebreakers(conn, week["id"])
     games = fetch_week_games(conn, week["id"])
+    weekly_result = next(
+        (item for item in compute_week_results(conn, week["id"]) if item["entry_id"] == active_entry["id"]),
+        None,
+    )
+    if weekly_result and weekly_result["submitted"]:
+        standing_html = (
+            f'<div class="account-standing"><span>Weekly standing</span>'
+            f'<strong>#{weekly_result["rank"]} <small>{weekly_result["wins"]}/{weekly_result["total_games"]} points</small></strong></div>'
+        )
+    else:
+        standing_html = '<div class="account-standing"><span>Weekly standing</span><strong>Pending picks</strong></div>'
     cards = []
     for game in games:
         game_locked = is_game_locked(game)
@@ -1523,7 +1534,7 @@ def render_picks(conn, account, message="", active_entry_id=None):
         {notice}
         <form class="pick-form" method="post" action="/picks" data-entry-id="{active_entry['id']}">
           <div class="form-row">
-            <div class="account-banner"><div><strong>{esc(account["name"])}</strong><div class="helper-copy">{esc(account["email"])}</div></div><span class="pill">{len(entries)} entries linked</span></div>
+            <div class="account-banner"><div><strong>{esc(account["name"])}</strong><div class="helper-copy">{esc(account["email"])}</div></div>{standing_html}<span class="pill">{len(entries)} entries linked</span></div>
             <div class="callout">Each game locks one minute before its own kickoff. Your picks stay private from everyone else until that game begins.</div>
           </div>
           {entry_select}
