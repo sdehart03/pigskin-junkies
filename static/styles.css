@@ -637,6 +637,19 @@ tbody tr:last-child td {
   color: var(--danger);
 }
 
+.rank-movement {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  font-weight: 700;
+}
+
+.rank-movement--up { color: var(--success); }
+.rank-movement--down { color: var(--danger); }
+.rank-movement--steady { color: var(--muted); font-size: 0.72rem; }
+.rank-movement--new { color: var(--muted); font-size: 0.8rem; }
+
 .pick-game-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
