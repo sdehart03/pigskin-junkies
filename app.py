@@ -778,8 +778,11 @@ def compute_previous_rank(conn, current_week_id, entry_id):
     return match["rank"] if match else None
 
 
-def compute_season_results(conn):
-    weeks = conn.execute("SELECT * FROM weeks ORDER BY id").fetchall()
+def compute_season_results(conn, through_week_id=None):
+    if through_week_id is None:
+        weeks = conn.execute("SELECT * FROM weeks ORDER BY id").fetchall()
+    else:
+        weeks = conn.execute("SELECT * FROM weeks WHERE id <= ? ORDER BY id", (through_week_id,)).fetchall()
     entries = fetch_all_entries(conn)
     per_week = {week["id"]: compute_week_results(conn, week["id"]) for week in weeks}
     standings = []
@@ -796,6 +799,27 @@ def compute_season_results(conn):
     for index, item in enumerate(standings, start=1):
         item["rank"] = index
     return standings
+
+
+def compute_previous_season_rank(conn, current_week_id, entry_id):
+    prior_week = conn.execute(
+        "SELECT id FROM weeks WHERE id < ? ORDER BY id DESC LIMIT 1", (current_week_id,)
+    ).fetchone()
+    if not prior_week:
+        return None
+    prior_standings = compute_season_results(conn, prior_week["id"])
+    match = next((row for row in prior_standings if row["entry_id"] == entry_id), None)
+    return match["rank"] if match else None
+
+
+def season_rank_movement(current_rank, previous_rank):
+    if previous_rank is None:
+        return "New", "rank-movement--new", "New"
+    if current_rank < previous_rank:
+        return "▲", "rank-movement--up", f"Up {previous_rank - current_rank}"
+    if current_rank > previous_rank:
+        return "▼", "rank-movement--down", f"Down {current_rank - previous_rank}"
+    return "●", "rank-movement--steady", "No change"
 
 
 def build_nav(active):
@@ -1586,16 +1610,19 @@ def render_leaderboard(conn, account):
     season_rows = []
     season_mobile_cards = []
     for row in season:
+        previous_rank = compute_previous_season_rank(conn, week["id"], row["entry_id"])
+        movement_icon, movement_class, movement_label = season_rank_movement(row["rank"], previous_rank)
+        movement_html = f'<span class="rank-movement {movement_class}" title="{movement_label}" aria-label="{movement_label}">{movement_icon}</span>'
         season_rows.append(
             "<tr>"
             f"<td>#{row['rank']}</td>"
             f'<td><a class="leaderboard-link" href="/player?entry_id={row["entry_id"]}&week_id={week["id"]}">{esc(row["display_name"])}</a></td>'
             + "".join(f"<td>{item['wins'] if item['wins'] is not None else '-'}</td>" for item in row["weekly"])
-            + f"<td><strong>{row['total']}</strong></td></tr>"
+            + f"<td><strong>{row['total']}</strong></td><td>{movement_html}</td></tr>"
         )
         season_mobile_cards.append(
             f'''<article class="leaderboard-mobile-card leaderboard-mobile-card--season">
-              <div><span class="leaderboard-mobile-card__rank">#{row["rank"]}</span><strong>{esc(row["display_name"])}</strong></div>
+              <div><span class="leaderboard-mobile-card__rank">#{row["rank"]}</span><strong>{esc(row["display_name"])}</strong>{movement_html}</div>
               <div class="leaderboard-mobile-card__score"><span>Season total</span><strong>{row["total"]}</strong></div>
               <div class="leaderboard-mobile-weeks">{''.join(f'<span>{esc(item["label"])} <strong>{item["wins"] if item["wins"] is not None else "-"}</strong></span>' for item in row["weekly"])}</div>
             </article>'''
@@ -1613,7 +1640,7 @@ def render_leaderboard(conn, account):
         </article>
         <article class="panel">
           <div class="section-heading"><div><p class="section-label">Whole season</p><h2>Season standings</h2></div><span class="badge">Auto-totaled</span></div>
-          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th>{''.join(f'<th>{esc(item["label"])}</th>' for item in weeks)}<th>Total</th></tr></thead><tbody>{''.join(season_rows)}</tbody></table></div>
+          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th>{''.join(f'<th>{esc(item["label"])}</th>' for item in weeks)}<th>Total</th><th>Move</th></tr></thead><tbody>{''.join(season_rows)}</tbody></table></div>
           <div class="leaderboard-mobile-list">{''.join(season_mobile_cards)}</div>
         </article>
       </section>
