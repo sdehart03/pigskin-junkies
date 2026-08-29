@@ -1106,6 +1106,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             </article>'''
         )
     week_rows = []
+    week_mobile_cards = []
     for listed_week in weeks:
         delete_control = (
             '<span class="helper-copy">Current week</span>'
@@ -1121,6 +1122,14 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             f"<td>{'Current' if listed_week['is_current'] else ''}</td>"
             f"<td>{delete_control}</td>"
             "</tr>"
+        )
+        week_mobile_cards.append(
+            f'''<article class="commissioner-week-card">
+              <div class="commissioner-week-card__heading"><strong>{esc(listed_week["label"])}</strong><span class="pill">{'Current' if listed_week["is_current"] else 'Upcoming'}</span></div>
+              <span><small>Identifier</small>{esc(listed_week["slug"])}</span>
+              <span><small>Lock time</small>{esc(listed_week["lock_time"])}</span>
+              {delete_control}
+            </article>'''
         )
     next_game_number = len(games) + 1
     team_datalist = '<datalist id="ncaa-team-options">' + ''.join(
@@ -1224,12 +1233,13 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
           </label>
           <button class="button button--ghost" type="submit">Make current week</button>
         </form>
-        <div class="table-wrap">
+        <div class="table-wrap weeks-desktop-table">
           <table>
             <thead><tr><th>Week</th><th>Slug</th><th>Lock time</th><th>Status</th><th>Manage</th></tr></thead>
             <tbody>{''.join(week_rows)}</tbody>
           </table>
         </div>
+        <div class="commissioner-mobile-list">{''.join(week_mobile_cards)}</div>
         <div class="section-heading panel-subsection"><div><p class="section-label">New week</p><h2>Start the next slate</h2></div></div>
         <form id="new-week" class="form-card" method="post" action="/commissioner/week/add">
           <div class="form-row">
