@@ -650,6 +650,48 @@ tbody tr:last-child td {
 .rank-movement--steady { color: var(--muted); font-size: 0.72rem; }
 .rank-movement--new { color: var(--muted); font-size: 0.8rem; }
 
+.season-history {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.season-history h3 {
+  margin: 0 0 12px;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.season-history-week {
+  border-top: 1px solid var(--line);
+}
+
+.season-history-week summary {
+  cursor: pointer;
+  padding: 12px 0;
+  color: var(--accent);
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+}
+
+.season-history-week__list {
+  display: grid;
+  gap: 6px;
+  padding: 0 0 12px;
+}
+
+.season-history-week__list a {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.season-history-week__list a:hover { background: var(--brand-soft); }
+
 .pick-game-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
