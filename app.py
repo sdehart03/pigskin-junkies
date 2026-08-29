@@ -551,10 +551,6 @@ def fetch_week_games(conn, week_id):
     ).fetchall()
 
 
-def is_locked(week):
-    return datetime.fromisoformat(week["lock_time"]) <= contest_now()
-
-
 def contest_now():
     return datetime.now(CONTEST_TIME_ZONE).replace(tzinfo=None)
 
@@ -1118,7 +1114,6 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             "<tr>"
             f"<td>{esc(listed_week['label'])}</td>"
             f"<td>{esc(listed_week['slug'])}</td>"
-            f"<td>{esc(listed_week['lock_time'])}</td>"
             f"<td>{'Current' if listed_week['is_current'] else ''}</td>"
             f"<td>{delete_control}</td>"
             "</tr>"
@@ -1127,7 +1122,6 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             f'''<article class="commissioner-week-card">
               <div class="commissioner-week-card__heading"><strong>{esc(listed_week["label"])}</strong><span class="pill">{'Current' if listed_week["is_current"] else 'Upcoming'}</span></div>
               <span><small>Identifier</small>{esc(listed_week["slug"])}</span>
-              <span><small>Lock time</small>{esc(listed_week["lock_time"])}</span>
               {delete_control}
             </article>'''
         )
@@ -1143,7 +1137,6 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             <input type="hidden" name="week_id" value="{week['id']}" />
             <div class="form-row">
               <label>Week label<input type="text" name="week_label" value="{esc(week['label'])}" /></label>
-              <label>Lock time<input type="datetime-local" name="lock_time" value="{esc(week['lock_time'])}" /></label>
             </div>
             <div class="form-row">
               {''.join(f'<label>Tiebreaker {tb["position"]}<input type="text" name="tb_{tb["position"]}" value="{esc(tb["prompt"])}" /></label>' for tb in tiebreakers)}
@@ -1235,7 +1228,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
         </form>
         <div class="table-wrap weeks-desktop-table">
           <table>
-            <thead><tr><th>Week</th><th>Slug</th><th>Lock time</th><th>Status</th><th>Manage</th></tr></thead>
+            <thead><tr><th>Week</th><th>Slug</th><th>Status</th><th>Manage</th></tr></thead>
             <tbody>{''.join(week_rows)}</tbody>
           </table>
         </div>
@@ -1246,7 +1239,6 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             <label>Week label<input type="text" name="label" placeholder="Week 2" required /></label>
             <label>Slug<input type="text" name="slug" placeholder="week-2" required /></label>
           </div>
-          <label>Lock time<input type="datetime-local" name="lock_time" required /></label>
           <div class="callout">New weeks begin with a blank game slate and become the active week automatically. Add the new matchups from Weekly Setup.</div>
           <label class="checkbox-row"><input type="checkbox" name="keep_current" value="1" /> Keep the current week active while I build this one for later</label>
           <button class="button button--primary" type="submit">Create new week</button>
@@ -1741,8 +1733,8 @@ def render_player(conn, account, entry_id, week_id):
 def save_commissioner_changes(conn, form):
     week = form_week(conn, form)
     conn.execute(
-        "UPDATE weeks SET label = ?, lock_time = ? WHERE id = ?",
-        (form.get("week_label", week["label"]).strip() or week["label"], form.get("lock_time", week["lock_time"]), week["id"]),
+        "UPDATE weeks SET label = ? WHERE id = ?",
+        (form.get("week_label", week["label"]).strip() or week["label"], week["id"]),
     )
     for tb in fetch_week_tiebreakers(conn, week["id"]):
         conn.execute(
@@ -1876,15 +1868,14 @@ def set_current_week(conn, form):
 def create_week(conn, form):
     label = (form.get("label") or "").strip()
     slug = (form.get("slug") or "").strip()
-    lock_time = (form.get("lock_time") or "").strip()
-    if not all([label, slug, lock_time]):
+    if not all([label, slug]):
         return
     make_current = form.get("keep_current") != "1"
     if make_current:
         conn.execute("UPDATE weeks SET is_current = 0")
     cur = conn.execute(
         "INSERT INTO weeks (slug, label, lock_time, is_current) VALUES (?, ?, ?, ?)",
-        (slug, label, lock_time, 1 if make_current else 0),
+        (slug, label, now_iso(), 1 if make_current else 0),
     )
     new_week_id = cur.lastrowid
     for position in range(1, 4):
