@@ -1224,7 +1224,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
               {''.join(f'<option value="{listed_week["id"]}" {"selected" if listed_week["id"] == week["id"] else ""}>{esc(listed_week["label"])}</option>' for listed_week in weeks)}
             </select>
           </label>
-          <button class="button button--ghost" type="submit">Make current week</button>
+          <button class="button button--primary" type="submit">Make current week</button>
         </form>
         <div class="table-wrap weeks-desktop-table">
           <table>
