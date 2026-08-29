@@ -3,6 +3,7 @@ import hmac
 import html
 import csv
 import os
+import re
 import secrets
 import sqlite3
 import urllib.parse
@@ -688,6 +689,33 @@ def tiebreaker_value(pick, position):
     return pick[f"tiebreaker_{position}"]
 
 
+def normalized_tiebreaker_text(value):
+    return re.sub(r"[^a-z0-9]", "", (value or "").lower())
+
+
+def tiebreaker_actual_total(prompt, games):
+    """Find the card game named by a total-points tiebreaker prompt."""
+    normalized_prompt = normalized_tiebreaker_text(prompt)
+    for game in games:
+        away_team = normalized_tiebreaker_text(game["away_team"])
+        home_team = normalized_tiebreaker_text(game["home_team"])
+        if away_team and home_team and away_team in normalized_prompt and home_team in normalized_prompt:
+            return game["score_away"] + game["score_home"]
+    return None
+
+
+def rank_results(results, sort_key):
+    results.sort(key=sort_key)
+    previous_key = None
+    for position, result in enumerate(results, start=1):
+        current_key = sort_key(result)
+        if current_key != previous_key:
+            rank = position
+            previous_key = current_key
+        result["rank"] = rank
+    return results
+
+
 def fetch_all_entries(conn):
     return conn.execute(
         """
@@ -701,6 +729,8 @@ def fetch_all_entries(conn):
 
 def compute_week_results(conn, week_id):
     games = fetch_week_games(conn, week_id)
+    tiebreakers = fetch_week_tiebreakers(conn, week_id)
+    tiebreaker_totals = [tiebreaker_actual_total(tb["prompt"], games) for tb in tiebreakers]
     entries = fetch_all_entries(conn)
     pick_rows = conn.execute(
         """
@@ -724,8 +754,6 @@ def compute_week_results(conn, week_id):
     selections = {}
     for row in item_rows:
         selections.setdefault(row["entry_id"], {})[row["game_id"]] = row["selected_team"]
-    tb_game = next((game for game in games if game["code"] == "Game 20"), games[0] if games else None)
-    actual_total = (tb_game["score_away"] + tb_game["score_home"]) if tb_game else 0
     results = []
     for entry in entries:
         pick = picks_by_entry.get(entry["id"])
@@ -741,6 +769,7 @@ def compute_week_results(conn, week_id):
                     "wins": 0,
                     "total_games": len(games),
                     "tb_gap": 9999,
+                    "tb_gaps": (9999, 9999, 9999),
                     "submitted_at": None,
                 }
             )
@@ -749,6 +778,10 @@ def compute_week_results(conn, week_id):
         for game in games:
             if has_game_started(game) and entry_selections.get(game["id"]) == game["winner"]:
                 wins += 1
+        tiebreaker_gaps = tuple(
+            abs(actual_total - int(pick[f"tiebreaker_{position}"] or 0)) if actual_total is not None else 9999
+            for position, actual_total in enumerate(tiebreaker_totals, start=1)
+        )
         results.append(
             {
                 "entry_id": entry["id"],
@@ -756,14 +789,12 @@ def compute_week_results(conn, week_id):
                 "submitted": True,
                 "wins": wins,
                 "total_games": len(games),
-                "tb_gap": abs(actual_total - int(pick["tiebreaker_1"] or 0)),
+                "tb_gap": tiebreaker_gaps[0],
+                "tb_gaps": tiebreaker_gaps,
                 "submitted_at": pick["submitted_at"],
             }
         )
-    results.sort(key=lambda item: (-item["wins"], item["tb_gap"], item["display_name"].lower()))
-    for index, result in enumerate(results, start=1):
-        result["rank"] = index
-    return results
+    return rank_results(results, lambda item: (-item["wins"], *item["tb_gaps"]))
 
 
 def compute_previous_rank(conn, current_week_id, entry_id):
@@ -787,18 +818,24 @@ def compute_season_results(conn, through_week_id=None):
     per_week = {week["id"]: compute_week_results(conn, week["id"]) for week in weeks}
     standings = []
     for entry in entries:
-        row = {"entry_id": entry["id"], "display_name": entry["display_name"], "weekly": [], "total": 0}
+        row = {
+            "entry_id": entry["id"],
+            "display_name": entry["display_name"],
+            "weekly": [],
+            "total": 0,
+            "tiebreaker_gaps": [0, 0, 0],
+        }
         for week in weeks:
             result = next((item for item in per_week[week["id"]] if item["entry_id"] == entry["id"]), None)
             wins = result["wins"] if result and result["submitted"] else None
             if wins is not None:
                 row["total"] += wins
+                for index, gap in enumerate(result["tb_gaps"]):
+                    if gap != 9999:
+                        row["tiebreaker_gaps"][index] += gap
             row["weekly"].append({"label": week["label"], "wins": wins})
         standings.append(row)
-    standings.sort(key=lambda item: (-item["total"], item["display_name"].lower()))
-    for index, item in enumerate(standings, start=1):
-        item["rank"] = index
-    return standings
+    return rank_results(standings, lambda item: (-item["total"], *item["tiebreaker_gaps"]))
 
 
 def compute_previous_season_rank(conn, current_week_id, entry_id):
