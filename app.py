@@ -1034,10 +1034,24 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
     weeks = fetch_all_weeks(conn)
     submitted_count = sum(1 for item in results if item["submitted"])
     missing = [item for item in results if not item["submitted"]]
-    missing_html = "".join(
+    missing_cards = [
         f'<div class="missing-player"><strong>{esc(item["display_name"])}</strong><span>Waiting on entry</span></div>'
         for item in missing
-    ) or '<div class="missing-player"><strong>Everyone is in</strong><span>No follow-up needed</span></div>'
+    ]
+    if not missing_cards:
+        missing_html = '<div class="missing-player"><strong>Everyone is in</strong><span>No follow-up needed</span></div>'
+    elif len(missing_cards) <= 8:
+        missing_html = "".join(missing_cards)
+    else:
+        remaining_count = len(missing_cards) - 8
+        entry_word = "entry" if remaining_count == 1 else "entries"
+        missing_html = (
+            "".join(missing_cards[:8])
+            + f'<details class="missing-entries-details"><summary>Show {remaining_count} more {entry_word}</summary>'
+            + '<div class="stack compact-stack">'
+            + "".join(missing_cards[8:])
+            + "</div></details>"
+        )
     game_rows = []
     for game in games:
         game_rows.append(
