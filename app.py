@@ -1035,6 +1035,26 @@ def render_delete_week_confirmation(account, week):
     return render_layout("Pigskin Junkies | Confirm Week Deletion", body, "/commissioner", account)
 
 
+def render_delete_game_confirmation(account, game):
+    body = f"""
+      <section class="page-hero"><div><p class="eyebrow">Game removal</p><h1>Delete {esc(game["code"])}?</h1></div></section>
+      <section class="auth-layout">
+        <article class="panel">
+          <p class="section-label">Confirmation required</p>
+          <h2>This action cannot be undone</h2>
+          <div class="alert alert--error">Deleting this game permanently removes every participant pick made for it. The remaining games will be renumbered automatically.</div>
+          <div class="summary-card"><strong>{esc(game["away_team"])} at {esc(game["home_team"])}</strong><span>{esc(game_meta(game))}</span></div>
+          <form class="pick-actions" method="post" action="/commissioner/game/delete/{game["id"]}">
+            <input type="hidden" name="confirm_delete" value="yes" />
+            <button class="button button--danger" type="submit">Yes, permanently delete this game</button>
+            <a class="button button--ghost" href="/commissioner/weekly?week_id={game["week_id"]}">Cancel and keep game</a>
+          </form>
+        </article>
+      </section>
+    """
+    return render_layout("Pigskin Junkies | Confirm Game Deletion", body, "/commissioner", account)
+
+
 def render_commissioner(conn, account, section="dashboard", week_id=None):
     if not account:
         return None, redirect  # sentinel handled by caller
@@ -1088,6 +1108,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             f'''<td><div class="game-row-actions"><a class="button button--ghost button--small" href="/commissioner/game/{game["id"]}/edit">Edit</a>
               <form method="post" action="/commissioner/game/move/{game["id"]}"><button class="button button--ghost button--small" type="submit" name="direction" value="earlier" {"disabled" if game == games[0] else ""}>Up</button></form>
               <form method="post" action="/commissioner/game/move/{game["id"]}"><button class="button button--ghost button--small" type="submit" name="direction" value="later" {"disabled" if game == games[-1] else ""}>Down</button></form>
+              <form method="post" action="/commissioner/game/delete/{game["id"]}"><button class="button button--danger button--small" type="submit">Delete</button></form>
             </div></td>'''
             "</tr>"
         )
@@ -1969,6 +1990,18 @@ def delete_week(conn, week_id):
     return True
 
 
+def delete_game(conn, game_id):
+    game = conn.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        return None
+    conn.execute("DELETE FROM pick_items WHERE game_id = ?", (game_id,))
+    conn.execute("DELETE FROM games WHERE id = ?", (game_id,))
+    remaining_game_ids = [listed_game["id"] for listed_game in fetch_week_games(conn, game["week_id"])]
+    set_game_order(conn, game["week_id"], remaining_game_ids)
+    conn.commit()
+    return game["week_id"]
+
+
 def add_game(conn, form):
     week = form_week(conn, form)
     away_team = (form.get("away_team") or "").strip()
@@ -2372,6 +2405,27 @@ def app(environ, start_response):
         form = read_post_data(environ)
         game_id = fetch_week_id(path.rsplit("/", 1)[-1])
         updated_week_id = move_game(conn, game_id, form.get("direction")) if game_id else None
+        conn.close()
+        return redirect(start_response, f"/commissioner/weekly?week_id={updated_week_id}" if updated_week_id else "/commissioner/weekly")
+
+    if path.startswith("/commissioner/game/delete/") and method == "POST":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login?next=commissioner")
+        if not account["is_commissioner"]:
+            conn.close()
+            return redirect(start_response, "/picks")
+        game_id = fetch_week_id(path.rsplit("/", 1)[-1])
+        target = conn.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone() if game_id else None
+        if not target:
+            conn.close()
+            return redirect(start_response, "/commissioner/weekly")
+        form = read_post_data(environ)
+        if form.get("confirm_delete") != "yes":
+            body = render_delete_game_confirmation(account, target)
+            conn.close()
+            return html_response(start_response, body)
+        updated_week_id = delete_game(conn, target["id"])
         conn.close()
         return redirect(start_response, f"/commissioner/weekly?week_id={updated_week_id}" if updated_week_id else "/commissioner/weekly")
 
