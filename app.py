@@ -1617,16 +1617,28 @@ def render_leaderboard(conn, account):
             "<tr>"
             f"<td>#{row['rank']}</td>"
             f'<td><a class="leaderboard-link" href="/player?entry_id={row["entry_id"]}&week_id={week["id"]}">{esc(row["display_name"])}</a></td>'
-            + "".join(f"<td>{item['wins'] if item['wins'] is not None else '-'}</td>" for item in row["weekly"])
             + f"<td><strong>{row['total']}</strong></td><td>{movement_html}</td></tr>"
         )
         season_mobile_cards.append(
             f'''<article class="leaderboard-mobile-card leaderboard-mobile-card--season">
               <div><span class="leaderboard-mobile-card__rank">#{row["rank"]}</span><strong>{esc(row["display_name"])}</strong>{movement_html}</div>
               <div class="leaderboard-mobile-card__score"><span>Season total</span><strong>{row["total"]}</strong></div>
-              <div class="leaderboard-mobile-weeks">{''.join(f'<span>{esc(item["label"])} <strong>{item["wins"] if item["wins"] is not None else "-"}</strong></span>' for item in row["weekly"])}</div>
             </article>'''
         )
+    previous_week_recaps = []
+    for past_week in weeks:
+        if past_week["id"] == week["id"]:
+            continue
+        recap_rows = "".join(
+            f'<a href="/player?entry_id={item["entry_id"]}&week_id={past_week["id"]}"><span>#{item["rank"]} {esc(item["display_name"])}</span><strong>{item["wins"]}/{item["total_games"]}</strong></a>'
+            for item in compute_week_results(conn, past_week["id"])
+        )
+        previous_week_recaps.append(
+            f'''<details class="season-history-week"><summary>{esc(past_week["label"])} recap</summary>
+              <div class="season-history-week__list">{recap_rows}</div>
+            </details>'''
+        )
+    history_html = "".join(previous_week_recaps) or '<p class="helper-copy">Completed weekly recaps will appear here as the season progresses.</p>'
     body = f"""
       <section class="page-hero">
         <div><p class="eyebrow">Participant view</p><h1>Weekly leaderboard and season standings</h1></div>
@@ -1640,8 +1652,9 @@ def render_leaderboard(conn, account):
         </article>
         <article class="panel">
           <div class="section-heading"><div><p class="section-label">Whole season</p><h2>Season standings</h2></div><span class="badge">Auto-totaled</span></div>
-          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th>{''.join(f'<th>{esc(item["label"])}</th>' for item in weeks)}<th>Total</th><th>Move</th></tr></thead><tbody>{''.join(season_rows)}</tbody></table></div>
+          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th><th>Total</th><th>Move</th></tr></thead><tbody>{''.join(season_rows)}</tbody></table></div>
           <div class="leaderboard-mobile-list">{''.join(season_mobile_cards)}</div>
+          <div class="season-history"><p class="section-label">Previous weeks</p><h3>Weekly recaps</h3>{history_html}</div>
         </article>
       </section>
     """
