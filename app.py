@@ -769,6 +769,7 @@ def compute_week_results(conn, week_id):
                     "total_games": len(games),
                     "tb_gap": 9999,
                     "tb_gaps": (9999, 9999, 9999),
+                    "tiebreaker_values": (None, None, None),
                     "submitted_at": None,
                 }
             )
@@ -794,6 +795,7 @@ def compute_week_results(conn, week_id):
                 "total_games": len(games),
                 "tb_gap": tiebreaker_gaps[0],
                 "tb_gaps": tiebreaker_gaps,
+                "tiebreaker_values": tuple(pick[f"tiebreaker_{position}"] for position in range(1, 4)),
                 "submitted_at": pick["submitted_at"],
             }
         )
@@ -1682,12 +1684,15 @@ def render_leaderboard(conn, account):
         else:
             status_text = "No picks yet"
             status_class = "status--warn"
+        tiebreaker_values = [value if value is not None else "-" for value in item["tiebreaker_values"]]
         weekly_rows.append(
             "<tr>"
             f"<td>#{item['rank']}</td>"
             f'<td><a class="leaderboard-link" href="/player?entry_id={item["entry_id"]}&week_id={week["id"]}">{esc(item["display_name"])}</a></td>'
             f"<td>{item['wins']}/{item['total_games']}</td>"
-            f"<td>{item['tb_gap'] if item['complete'] else '-'}</td>"
+            f"<td>{esc(tiebreaker_values[0])}</td>"
+            f"<td>{esc(tiebreaker_values[1])}</td>"
+            f"<td>{esc(tiebreaker_values[2])}</td>"
             f'<td class="status {status_class}">{status_text}</td>'
             "</tr>"
         )
@@ -1695,6 +1700,7 @@ def render_leaderboard(conn, account):
             f'''<a class="leaderboard-mobile-card" href="/player?entry_id={item["entry_id"]}&week_id={week["id"]}">
               <div><span class="leaderboard-mobile-card__rank">#{item["rank"]}</span><strong>{esc(item["display_name"])}</strong></div>
               <div class="leaderboard-mobile-card__score"><span>Weekly points</span><strong>{item["wins"]}/{item["total_games"]}</strong></div>
+              <div class="leaderboard-mobile-tiebreakers"><span>TB1 <strong>{esc(tiebreaker_values[0])}</strong></span><span>TB2 <strong>{esc(tiebreaker_values[1])}</strong></span><span>TB3 <strong>{esc(tiebreaker_values[2])}</strong></span></div>
               <span class="status {status_class}">{status_text}</span>
             </a>'''
         )
@@ -1738,7 +1744,7 @@ def render_leaderboard(conn, account):
       <section class="dashboard-grid">
         <article class="panel">
           <div class="section-heading"><div><p class="section-label">This week</p><h2>Weekly leaderboard</h2></div><span class="badge">Click a name to inspect picks</span></div>
-          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th><th>Weekly points</th><th>Tiebreak gap</th><th>Status</th></tr></thead><tbody>{''.join(weekly_rows)}</tbody></table></div>
+          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th><th>Weekly points</th><th>Tiebreaker 1</th><th>Tiebreaker 2</th><th>Tiebreaker 3</th><th>Status</th></tr></thead><tbody>{''.join(weekly_rows)}</tbody></table></div>
           <div class="leaderboard-mobile-list">{''.join(weekly_mobile_cards)}</div>
         </article>
         <article class="panel">
