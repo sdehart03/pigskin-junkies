@@ -758,14 +758,13 @@ def compute_week_results(conn, week_id):
     for entry in entries:
         pick = picks_by_entry.get(entry["id"])
         entry_selections = selections.get(entry["id"], {})
-        # A participant can save progress, but an entry only joins the standings
-        # after every game on the card has a recorded selection.
-        if not pick or len(entry_selections) != len(games):
+        if not pick:
             results.append(
                 {
                     "entry_id": entry["id"],
                     "display_name": entry["display_name"],
                     "submitted": False,
+                    "complete": False,
                     "wins": 0,
                     "total_games": len(games),
                     "tb_gap": 9999,
@@ -774,6 +773,9 @@ def compute_week_results(conn, week_id):
                 }
             )
             continue
+        # Score every recorded selection as soon as its game starts. A complete
+        # card remains useful for commissioner follow-up, but is not required
+        # for an entry to appear in the live standings.
         wins = 0
         for game in games:
             if has_game_started(game) and entry_selections.get(game["id"]) == game["winner"]:
@@ -786,7 +788,8 @@ def compute_week_results(conn, week_id):
             {
                 "entry_id": entry["id"],
                 "display_name": entry["display_name"],
-                "submitted": True,
+                "submitted": bool(entry_selections),
+                "complete": len(entry_selections) == len(games),
                 "wins": wins,
                 "total_games": len(games),
                 "tb_gap": tiebreaker_gaps[0],
@@ -1051,6 +1054,27 @@ def render_delete_account_confirmation(account, target):
     return render_layout("Pigskin Junkies | Confirm Account Deletion", body, "/commissioner", account)
 
 
+def render_delete_entry_confirmation(account, entry):
+    body = f"""
+      <section class="page-hero"><div><p class="eyebrow">Entry removal</p><h1>Delete {esc(entry["display_name"])}?</h1></div></section>
+      <section class="auth-layout">
+        <article class="panel">
+          <p class="section-label">Confirmation required</p>
+          <h2>This action cannot be undone</h2>
+          <div class="alert alert--error">Deleting this entry removes its picks and standings history. The participant account for {esc(entry["account_name"])} will remain active.</div>
+          <div class="summary-card"><strong>{esc(entry["display_name"])}</strong><span>{esc(entry["account_name"])}</span></div>
+          <form class="pick-actions" method="post" action="/commissioner/entry/delete">
+            <input type="hidden" name="entry_id" value="{entry["id"]}" />
+            <input type="hidden" name="confirm_delete" value="yes" />
+            <button class="button button--danger" type="submit">Yes, permanently delete this entry</button>
+            <a class="button button--ghost" href="/commissioner/participants">Cancel and keep entry</a>
+          </form>
+        </article>
+      </section>
+    """
+    return render_layout("Pigskin Junkies | Confirm Entry Deletion", body, "/commissioner", account)
+
+
 def render_delete_week_confirmation(account, week):
     body = f"""
       <section class="page-hero"><div><p class="eyebrow">Week removal</p><h1>Delete {esc(week["label"])}?</h1></div></section>
@@ -1113,10 +1137,10 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
     results = compute_week_results(conn, week["id"])
     accounts_with_entries = fetch_accounts_with_entries(conn)
     weeks = fetch_all_weeks(conn)
-    submitted_count = sum(1 for item in results if item["submitted"])
-    missing = [item for item in results if not item["submitted"]]
+    submitted_count = sum(1 for item in results if item["complete"])
+    missing = [item for item in results if not item["complete"]]
     missing_cards = [
-        f'<div class="missing-player"><strong>{esc(item["display_name"])}</strong><span>Waiting on entry</span></div>'
+        f'<div class="missing-player"><strong>{esc(item["display_name"])}</strong><span>Waiting on remaining picks</span></div>'
         for item in missing
     ]
     if not missing_cards:
@@ -1154,7 +1178,9 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
     for item in accounts_with_entries:
         managed = item["account"]
         entries_html = "".join(
-            f'<div class="entry-pill">{esc(entry["display_name"])}</div>'
+            f'''<div class="entry-pill entry-pill--manageable"><span>{esc(entry["display_name"])}</span>
+              <form method="post" action="/commissioner/entry/delete"><input type="hidden" name="entry_id" value="{entry["id"]}" />
+                <button class="entry-pill__delete" type="submit" aria-label="Delete {esc(entry["display_name"])} entry">Delete</button></form></div>'''
             for entry in item["entries"]
         ) or '<div class="entry-pill">No entries</div>'
         account_actions = f'''
@@ -1647,14 +1673,21 @@ def render_leaderboard(conn, account):
     weekly_mobile_cards = []
     for item in results:
         previous = compute_previous_rank(conn, week["id"], item["entry_id"])
-        status_text = movement_text(item["rank"], previous) if item["submitted"] else "Missing picks"
-        status_class = "status--good" if item["submitted"] else "status--warn"
+        if item["complete"]:
+            status_text = movement_text(item["rank"], previous)
+            status_class = "status--good"
+        elif item["submitted"]:
+            status_text = "In progress"
+            status_class = "status--warn"
+        else:
+            status_text = "No picks yet"
+            status_class = "status--warn"
         weekly_rows.append(
             "<tr>"
             f"<td>#{item['rank']}</td>"
             f'<td><a class="leaderboard-link" href="/player?entry_id={item["entry_id"]}&week_id={week["id"]}">{esc(item["display_name"])}</a></td>'
             f"<td>{item['wins']}/{item['total_games']}</td>"
-            f"<td>{item['tb_gap'] if item['submitted'] else '-'}</td>"
+            f"<td>{item['tb_gap'] if item['complete'] else '-'}</td>"
             f'<td class="status {status_class}">{status_text}</td>'
             "</tr>"
         )
@@ -1966,6 +1999,19 @@ def delete_account(conn, account_id, acting_account_id):
         conn.execute("DELETE FROM picks WHERE entry_id = ?", (entry["id"],))
     conn.execute("DELETE FROM entries WHERE account_id = ?", (account_id,))
     conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+    conn.commit()
+    return True
+
+
+def delete_entry(conn, entry_id):
+    entry = conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    if not entry:
+        return False
+    pick_rows = conn.execute("SELECT id FROM picks WHERE entry_id = ?", (entry_id,)).fetchall()
+    for pick in pick_rows:
+        conn.execute("DELETE FROM pick_items WHERE pick_id = ?", (pick["id"],))
+    conn.execute("DELETE FROM picks WHERE entry_id = ?", (entry_id,))
+    conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
     conn.commit()
     return True
 
@@ -2541,6 +2587,30 @@ def app(environ, start_response):
             conn.close()
             return redirect(start_response, "/picks")
         add_entry(conn, read_post_data(environ))
+        conn.close()
+        return redirect(start_response, "/commissioner/participants")
+
+    if path == "/commissioner/entry/delete" and method == "POST":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login?next=commissioner")
+        if not account["is_commissioner"]:
+            conn.close()
+            return redirect(start_response, "/picks")
+        form = read_post_data(environ)
+        entry_id = fetch_week_id(form.get("entry_id"))
+        target = conn.execute(
+            "SELECT e.*, a.name AS account_name FROM entries e JOIN accounts a ON a.id = e.account_id WHERE e.id = ?",
+            (entry_id,),
+        ).fetchone() if entry_id else None
+        if not target:
+            conn.close()
+            return redirect(start_response, "/commissioner/participants")
+        if form.get("confirm_delete") != "yes":
+            body = render_delete_entry_confirmation(account, target)
+            conn.close()
+            return html_response(start_response, body)
+        delete_entry(conn, target["id"])
         conn.close()
         return redirect(start_response, "/commissioner/participants")
 
