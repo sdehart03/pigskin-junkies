@@ -1094,6 +1094,7 @@ tbody tr:last-child td {
 
   .commissioner-hub__card { min-height: 0; padding: 20px; }
   .participants-desktop-table { display: none !important; }
+  .weeks-desktop-table { display: none !important; }
   .commissioner-mobile-list { display: grid !important; gap: 12px; }
   .commissioner-account-card {
     display: grid;
@@ -1109,6 +1110,27 @@ tbody tr:last-child td {
   .commissioner-account-card small { display: block; margin-bottom: 7px; color: var(--muted); font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
   .commissioner-account-card .manage-details { padding-top: 12px; border-top: 1px solid var(--line); }
   .commissioner-account-card .inline-form label { min-width: 0; }
+  .commissioner-week-card {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.035);
+  }
+  .commissioner-week-card__heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .commissioner-week-card__heading strong { font-family: "Space Grotesk", sans-serif; font-size: 1.1rem; }
+  .commissioner-week-card > span { display: grid; gap: 3px; color: var(--muted); overflow-wrap: anywhere; }
+  .commissioner-week-card small { color: var(--muted); font-size: 0.76rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+  .commissioner-week-card form { margin: 2px 0 0; }
+
+  .form-card,
+  .form-card label,
+  .form-card input,
+  .form-card select,
+  .form-card textarea { min-width: 0; max-width: 100%; }
+  .form-card .checkbox-row { flex-wrap: wrap; align-items: flex-start; }
+  .form-card > .button { width: 100%; min-height: 48px; }
   .commissioner-workspace-nav {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
