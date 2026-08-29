@@ -1185,9 +1185,12 @@ tbody tr:last-child td {
   .leaderboard-mobile-card strong { font-family: "Space Grotesk", sans-serif; }
   .leaderboard-mobile-card__rank { color: var(--accent); font-weight: 700; }
   .leaderboard-mobile-card__score { display: grid; justify-items: end; gap: 2px; }
-  .leaderboard-mobile-card__score span { color: var(--muted); font-size: 0.78rem; }
-  .leaderboard-mobile-card > .status { grid-column: 1 / -1; font-size: 0.9rem; }
-  .leaderboard-mobile-weeks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.leaderboard-mobile-card__score span { color: var(--muted); font-size: 0.78rem; }
+.leaderboard-mobile-card > .status { grid-column: 1 / -1; font-size: 0.9rem; }
+.leaderboard-mobile-tiebreakers { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.leaderboard-mobile-tiebreakers span { padding: 5px 8px; border-radius: 999px; background: rgba(90, 140, 255, 0.12); color: var(--muted); font-size: 0.78rem; }
+.leaderboard-mobile-tiebreakers strong { color: var(--ink); }
+.leaderboard-mobile-weeks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
   .leaderboard-mobile-weeks span { padding: 5px 8px; border-radius: 999px; background: rgba(90, 140, 255, 0.12); color: var(--muted); font-size: 0.8rem; }
   .leaderboard-mobile-weeks strong { color: var(--ink); }
 
