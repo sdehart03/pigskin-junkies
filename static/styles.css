@@ -335,6 +335,21 @@ thead th,
   font-size: 0.9rem;
 }
 
+.missing-entries-details {
+  margin-top: 2px;
+}
+
+.missing-entries-details summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+}
+
+.missing-entries-details[open] summary {
+  margin-bottom: 10px;
+}
+
 .jump-card,
 .leader-card {
   text-decoration: none;
