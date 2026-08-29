@@ -816,6 +816,26 @@ tbody tr:last-child td {
   font-weight: 700;
 }
 
+.entry-pill--manageable {
+  gap: 7px;
+}
+
+.entry-pill--manageable form {
+  margin: 0;
+}
+
+.entry-pill__delete {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #ffaaa6;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .compact-stack {
   gap: 10px;
 }
