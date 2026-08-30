@@ -491,12 +491,24 @@ thead th,
 }
 
 .full-picks-table {
+  display: block;
   width: 100%;
   max-width: 100%;
-  overflow-x: scroll;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
   overscroll-behavior-x: contain;
   touch-action: pan-x;
   scrollbar-color: var(--brand) rgba(255, 255, 255, 0.08);
+}
+
+.full-picks-table::-webkit-scrollbar {
+  height: 0.75rem;
+}
+
+.full-picks-table::-webkit-scrollbar-thumb {
+  background: var(--brand);
+  border-radius: 999px;
 }
 
 .full-picks-table table {
