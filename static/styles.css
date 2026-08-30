@@ -720,6 +720,26 @@ tbody tr:last-child td {
   font-size: 0.95rem;
 }
 
+.tiebreaker-game-field,
+.tiebreaker-game-value {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.tiebreaker-game-field input {
+  width: 7rem;
+  max-width: 100%;
+}
+
+.tiebreaker-game-value strong {
+  color: var(--ink);
+}
+
 .pick-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
