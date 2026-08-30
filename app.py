@@ -955,7 +955,7 @@ def render_layout(title, body, active, account):
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260830-full-picks-scroll" />
   </head>
   <body>
     <div class="site-shell">
@@ -1857,7 +1857,7 @@ def render_all_picks(conn, account):
       <section class="panel">
         <div class="section-heading"><div><p class="section-label">Full field</p><h2>All participant picks</h2></div><span class="badge">{len(results)} entries</span></div>
         <div class="callout">Each game column unlocks at its own kickoff. Until then, every selection remains private. Scroll or swipe the table left and right to see every game.</div>
-        <div class="table-wrap full-picks-table"><table><thead><tr><th>Rank</th><th>Entry</th>{game_headers}</tr></thead><tbody>{''.join(pick_rows)}</tbody></table></div>
+        <div class="table-wrap full-picks-table" style="width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden;"><table><thead><tr><th>Rank</th><th>Entry</th>{game_headers}</tr></thead><tbody>{''.join(pick_rows)}</tbody></table></div>
       </section>
     """
     return render_layout("Pigskin Junkies | Full Pick Table", body, "/leaderboard", account)
