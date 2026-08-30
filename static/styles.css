@@ -117,6 +117,12 @@ thead th,
   font-family: "Space Grotesk", sans-serif;
 }
 
+.auth-chip--register {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
 .brand span {
   display: grid;
 }
@@ -147,6 +153,7 @@ thead th,
 .auth-controls {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   position: relative;
 }
 
