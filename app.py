@@ -1811,7 +1811,7 @@ def render_leaderboard(conn, account):
       </section>
       <section class="dashboard-grid">
         <article class="panel">
-          <div class="section-heading"><div><p class="section-label">This week</p><h2>Weekly leaderboard</h2></div><span class="badge">Click a name to inspect picks</span></div>
+          <div class="section-heading"><div><p class="section-label">This week</p><h2>Weekly leaderboard</h2></div><div class="section-heading__actions"><a class="button button--ghost button--small" href="/all-picks">View full pick table</a><span class="badge">Click a name to inspect picks</span></div></div>
           <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th><th>Weekly points</th>{''.join(f'<th>Tiebreaker {position}</th>' for position in visible_tiebreaker_positions)}</tr></thead><tbody>{''.join(weekly_rows)}</tbody></table></div>
           <div class="leaderboard-mobile-list">{''.join(weekly_mobile_cards)}</div>
         </article>
@@ -1824,6 +1824,43 @@ def render_leaderboard(conn, account):
       </section>
     """
     return render_layout("Pigskin Junkies | Leaderboards", body, "/leaderboard", account)
+
+
+def render_all_picks(conn, account):
+    """Show the current card across the field without exposing unstarted picks."""
+    week = fetch_current_week(conn)
+    games = fetch_week_games(conn, week["id"])
+    results = compute_week_results(conn, week["id"])
+    pick_rows = []
+    for result in results:
+        _, selections = fetch_pick_bundle(conn, week["id"], result["entry_id"])
+        game_cells = []
+        for game in games:
+            pick = selections.get(game["id"], "-") if has_game_started(game) else "Private"
+            game_cells.append(f'<td>{esc(pick)}</td>')
+        pick_rows.append(
+            "<tr>"
+            f"<td>#{result['rank']}</td>"
+            f'<td><a class="leaderboard-link" href="/player?entry_id={result["entry_id"]}&week_id={week["id"]}">{esc(result["display_name"])}</a></td>'
+            + "".join(game_cells)
+            + "</tr>"
+        )
+    game_headers = "".join(
+        f'<th><span>{esc(game["code"])}</span><small>{esc(game["away_team"])} at {esc(game["home_team"])}</small></th>'
+        for game in games
+    )
+    body = f"""
+      <section class="page-hero">
+        <div><p class="eyebrow">Participant view</p><h1>{esc(week["label"])} full pick table</h1><p class="hero__lede">Every entry, every game, in one place.</p></div>
+        <div class="page-hero__actions"><a class="button button--ghost" href="/leaderboard">Back to leaderboard</a></div>
+      </section>
+      <section class="panel">
+        <div class="section-heading"><div><p class="section-label">Full field</p><h2>All participant picks</h2></div><span class="badge">{len(results)} entries</span></div>
+        <div class="callout">Each game column unlocks at its own kickoff. Until then, every selection remains private.</div>
+        <div class="table-wrap full-picks-table"><table><thead><tr><th>Rank</th><th>Entry</th>{game_headers}</tr></thead><tbody>{''.join(pick_rows)}</tbody></table></div>
+      </section>
+    """
+    return render_layout("Pigskin Junkies | Full Pick Table", body, "/leaderboard", account)
 
 
 def render_trends(conn, account):
@@ -2819,6 +2856,11 @@ def app(environ, start_response):
 
     if path == "/leaderboard" and method == "GET":
         body = render_leaderboard(conn, account)
+        conn.close()
+        return html_response(start_response, body)
+
+    if path == "/all-picks" and method == "GET":
+        body = render_all_picks(conn, account)
         conn.close()
         return html_response(start_response, body)
 
