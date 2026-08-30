@@ -22,6 +22,7 @@ SECRET_KEY = os.environ.get("PIGSKIN_JUNKIES_SECRET", "change-this-before-produc
 HOST = os.environ.get("PIGSKIN_JUNKIES_HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8001"))
 COOKIE_SECURE = os.environ.get("PIGSKIN_JUNKIES_COOKIE_SECURE", "0") == "1"
+REGISTRATION_PASSWORD = os.environ.get("PIGSKIN_JUNKIES_REGISTRATION_PASSWORD", "pigskin2026")
 CONTEST_TIME_ZONE = ZoneInfo("America/New_York")
 
 # Searchable suggestions for the weekly game builder. Commissioners can still type a
@@ -1047,12 +1048,36 @@ def render_login(conn, account, error="", next_page=""):
             <label>Email<input type="email" name="email" autocomplete="username" placeholder="you@example.com" required /></label>
             <label>Password<input type="password" name="password" autocomplete="current-password" placeholder="Enter your contest password" required /></label>
             <div class="helper-copy">{esc(callout)}</div>
-            <div class="pick-actions"><button class="button button--primary" type="submit">Sign in</button></div>
+            <div class="pick-actions"><button class="button button--primary" type="submit">Sign in</button><a class="button button--ghost" href="/register">Register for the contest</a></div>
           </form>
         </article>
       </section>
     """
     return render_layout("Pigskin Junkies | Sign In", body, "", account)
+
+
+def render_registration(account, error=""):
+    error_html = f'<div class="alert alert--error">{esc(error)}</div>' if error else ""
+    body = f"""
+      <section class="page-hero page-hero--compact"><div><p class="eyebrow">Pigskin Junkies</p><h1>Register for the contest</h1><p class="hero__lede">Use the shared registration code to create your own private account and entry.</p></div></section>
+      <section class="auth-layout auth-layout--narrow">
+        <article class="panel">
+          {error_html}
+          <form class="form-card" method="post" action="/register">
+            <label>Contest registration code<input type="password" name="registration_password" autocomplete="off" placeholder="Enter the code shared by the commissioners" required /></label>
+            <label>Your name<input type="text" name="name" autocomplete="name" placeholder="Your name" required /></label>
+            <label>Email<input type="email" name="email" autocomplete="email" placeholder="you@example.com" required /></label>
+            <label>Create a private password<input type="password" name="password" autocomplete="new-password" minlength="8" placeholder="At least 8 characters" required /></label>
+            <label>Confirm private password<input type="password" name="confirm_password" autocomplete="new-password" minlength="8" required /></label>
+            <label>Entry name<input type="text" name="entry_one" placeholder="Name shown on the leaderboard" required /></label>
+            <label>Second entry name <span class="helper-copy">(optional)</span><input type="text" name="entry_two" placeholder="Leave blank if you only have one entry" /></label>
+            <div class="callout">The registration code only allows contest members to sign up. Your private password is only known to you and is used for future sign-ins.</div>
+            <div class="pick-actions"><button class="button button--primary" type="submit">Create my account</button><a class="button button--ghost" href="/login">Back to sign in</a></div>
+          </form>
+        </article>
+      </section>
+    """
+    return render_layout("Pigskin Junkies | Register", body, "", account)
 
 
 def render_change_password(account, error="", message=""):
@@ -2052,6 +2077,43 @@ def create_account(conn, form):
     conn.commit()
 
 
+def register_participant(conn, form):
+    registration_password = form.get("registration_password", "")
+    name = (form.get("name") or "").strip()
+    email = (form.get("email") or "").strip().lower()
+    password = (form.get("password") or "").strip()
+    confirm_password = (form.get("confirm_password") or "").strip()
+    entry_one = (form.get("entry_one") or "").strip()
+    entry_two = (form.get("entry_two") or "").strip()
+
+    if not hmac.compare_digest(registration_password, REGISTRATION_PASSWORD):
+        return None, "The contest registration code was not correct."
+    if not all([name, email, password, entry_one]):
+        return None, "Please complete every required field."
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        return None, "Enter a valid email address."
+    if len(password) < 8:
+        return None, "Your private password must be at least 8 characters."
+    if password != confirm_password:
+        return None, "Your private passwords did not match."
+    if entry_two and entry_two.casefold() == entry_one.casefold():
+        return None, "Your two entry names need to be different."
+    existing = conn.execute("SELECT id FROM accounts WHERE lower(email) = lower(?)", (email,)).fetchone()
+    if existing:
+        return None, "An account already uses that email address. Sign in instead."
+
+    cur = conn.execute(
+        "INSERT INTO accounts (name, email, password_hash, is_commissioner) VALUES (?, ?, ?, 0)",
+        (name, email, hash_password(password)),
+    )
+    account_id = cur.lastrowid
+    entry_id = conn.execute("INSERT INTO entries (account_id, display_name) VALUES (?, ?)", (account_id, entry_one)).lastrowid
+    if entry_two:
+        conn.execute("INSERT INTO entries (account_id, display_name) VALUES (?, ?)", (account_id, entry_two))
+    conn.commit()
+    return {"account_id": account_id, "entry_id": entry_id}, ""
+
+
 def import_accounts_from_csv(conn, csv_text):
     if not (csv_text or "").strip():
         return 0
@@ -2491,6 +2553,30 @@ def app(environ, start_response):
         body = render_home(conn, account)
         conn.close()
         return html_response(start_response, body)
+
+    if path == "/register" and method == "GET":
+        if account:
+            conn.close()
+            return redirect(start_response, "/picks")
+        body = render_registration(account)
+        conn.close()
+        return html_response(start_response, body)
+
+    if path == "/register" and method == "POST":
+        if account:
+            conn.close()
+            return redirect(start_response, "/picks")
+        registered, error = register_participant(conn, read_post_data(environ))
+        if not registered:
+            body = render_registration(account, error=error)
+            conn.close()
+            return html_response(start_response, body, status="400 Bad Request")
+        headers = [
+            cookie_header("pigskin_session", sign_session(registered["account_id"])),
+            cookie_header("pigskin_entry", registered["entry_id"]),
+        ]
+        conn.close()
+        return redirect(start_response, "/picks", headers)
 
     if path == "/login" and method == "GET":
         next_page = query.get("next", [""])[0]
