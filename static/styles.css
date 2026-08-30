@@ -483,6 +483,46 @@ thead th,
   margin-bottom: 18px;
 }
 
+.section-heading__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.full-picks-table table {
+  min-width: 1700px;
+}
+
+.full-picks-table th {
+  min-width: 8.5rem;
+  white-space: normal;
+}
+
+.full-picks-table th:first-child,
+.full-picks-table td:first-child {
+  min-width: 4.5rem;
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+}
+
+.full-picks-table th:nth-child(2),
+.full-picks-table td:nth-child(2) {
+  min-width: 10rem;
+  position: sticky;
+  left: 4.5rem;
+  background: var(--surface);
+}
+
+.full-picks-table th small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.25;
+}
+
 .pill,
 .badge {
   display: inline-flex;
