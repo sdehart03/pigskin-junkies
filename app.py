@@ -136,6 +136,7 @@ def init_db():
             site_note TEXT NOT NULL DEFAULT '',
             spread_text TEXT NOT NULL,
             display_order INTEGER NOT NULL DEFAULT 0,
+            tiebreaker_position INTEGER NOT NULL DEFAULT 0,
             winner TEXT,
             score_away INTEGER NOT NULL DEFAULT 0,
             score_home INTEGER NOT NULL DEFAULT 0,
@@ -182,6 +183,8 @@ def ensure_schema(conn):
         conn.execute("ALTER TABLE games ADD COLUMN site_note TEXT NOT NULL DEFAULT ''")
     if "display_order" not in columns:
         conn.execute("ALTER TABLE games ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0")
+    if "tiebreaker_position" not in columns:
+        conn.execute("ALTER TABLE games ADD COLUMN tiebreaker_position INTEGER NOT NULL DEFAULT 0")
     for week in conn.execute("SELECT DISTINCT week_id FROM games").fetchall():
         unordered = conn.execute(
             "SELECT COUNT(*) AS count FROM games WHERE week_id = ? AND display_order = 0",
@@ -192,6 +195,20 @@ def ensure_schema(conn):
                 "SELECT id FROM games WHERE week_id = ? ORDER BY id", (week["week_id"],)
             ).fetchall()]
             set_game_order(conn, week["week_id"], game_ids)
+    for week in conn.execute("SELECT id FROM weeks").fetchall():
+        if conn.execute(
+            "SELECT COUNT(*) AS count FROM games WHERE week_id = ? AND tiebreaker_position > 0",
+            (week["id"],),
+        ).fetchone()["count"]:
+            continue
+        games = fetch_week_games(conn, week["id"])
+        for tiebreaker in fetch_week_tiebreakers(conn, week["id"]):
+            game = matching_tiebreaker_game(tiebreaker["prompt"], games)
+            if game:
+                conn.execute(
+                    "UPDATE games SET tiebreaker_position = ? WHERE id = ?",
+                    (tiebreaker["position"], game["id"]),
+                )
 
 
 def seed_database(conn):
@@ -552,6 +569,13 @@ def fetch_week_games(conn, week_id):
     ).fetchall()
 
 
+def fetch_week_tiebreaker_games(conn, week_id):
+    return conn.execute(
+        "SELECT * FROM games WHERE week_id = ? AND tiebreaker_position BETWEEN 1 AND 3 ORDER BY tiebreaker_position",
+        (week_id,),
+    ).fetchall()
+
+
 def contest_now():
     return datetime.now(CONTEST_TIME_ZONE).replace(tzinfo=None)
 
@@ -704,6 +728,34 @@ def tiebreaker_actual_total(prompt, games):
     return None
 
 
+def matching_tiebreaker_game(prompt, games):
+    """Find the game named by a legacy tiebreaker prompt during migration."""
+    normalized_prompt = normalized_tiebreaker_text(prompt)
+    for game in games:
+        away_team = normalized_tiebreaker_text(game["away_team"])
+        home_team = normalized_tiebreaker_text(game["home_team"])
+        if away_team and home_team and away_team in normalized_prompt and home_team in normalized_prompt:
+            return game
+    return None
+
+
+def set_game_tiebreaker_position(conn, week_id, game_id, position):
+    """Keep each tiebreaker slot unique within a weekly card."""
+    conn.execute(
+        "UPDATE games SET tiebreaker_position = 0 WHERE week_id = ? AND tiebreaker_position = ? AND id != ?",
+        (week_id, position, game_id),
+    ) if position else None
+    conn.execute("UPDATE games SET tiebreaker_position = ? WHERE id = ?", (position, game_id))
+
+
+def tiebreaker_position_from_form(form):
+    try:
+        position = int(form.get("tiebreaker_position") or 0)
+    except ValueError:
+        return 0
+    return position if position in {0, 1, 2, 3} else 0
+
+
 def rank_results(results, sort_key):
     results.sort(key=sort_key)
     previous_key = None
@@ -729,8 +781,7 @@ def fetch_all_entries(conn):
 
 def compute_week_results(conn, week_id):
     games = fetch_week_games(conn, week_id)
-    tiebreakers = fetch_week_tiebreakers(conn, week_id)
-    tiebreaker_totals = [tiebreaker_actual_total(tb["prompt"], games) for tb in tiebreakers]
+    tiebreaker_games = {game["tiebreaker_position"]: game for game in fetch_week_tiebreaker_games(conn, week_id)}
     entries = fetch_all_entries(conn)
     pick_rows = conn.execute(
         """
@@ -782,8 +833,9 @@ def compute_week_results(conn, week_id):
             if has_game_started(game) and entry_selections.get(game["id"]) == game["winner"]:
                 wins += 1
         tiebreaker_gaps = tuple(
-            abs(actual_total - int(pick[f"tiebreaker_{position}"] or 0)) if actual_total is not None else 9999
-            for position, actual_total in enumerate(tiebreaker_totals, start=1)
+            abs((game["score_away"] + game["score_home"]) - int(pick[f"tiebreaker_{position}"] or 0))
+            if game and game["winner"] else 9999
+            for position, game in ((position, tiebreaker_games.get(position)) for position in range(1, 4))
         )
         results.append(
             {
@@ -1134,7 +1186,6 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
         return render_layout("Pigskin Junkies | Commissioner", body, "/commissioner", account), None
 
     week = fetch_week(conn, week_id) or fetch_current_week(conn)
-    tiebreakers = fetch_week_tiebreakers(conn, week["id"])
     games = fetch_week_games(conn, week["id"])
     results = compute_week_results(conn, week["id"])
     accounts_with_entries = fetch_accounts_with_entries(conn)
@@ -1262,9 +1313,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             <div class="form-row">
               <label>Week label<input type="text" name="week_label" value="{esc(week['label'])}" /></label>
             </div>
-            <div class="form-row">
-              {''.join(f'<label>Tiebreaker {tb["position"]}<input type="text" name="tb_{tb["position"]}" value="{esc(tb["prompt"])}" /></label>' for tb in tiebreakers)}
-            </div>
+            <div class="callout">Assign tiebreakers directly to games below. Each designated game asks participants for its total points on the same pick card.</div>
           </form>
           <div class="table-wrap">
             <table>
@@ -1293,6 +1342,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             <select name="favorite_side"><option value="away">Away team</option><option value="home" selected>Home team</option><option value="none">Pick 'em</option></select>
           </label>
           <label>Favorite by<input type="number" min="0" step="0.5" name="spread" placeholder="Example: 3.5" /></label>
+          <label>Tiebreaker<select name="tiebreaker_position"><option value="0" selected>Not a tiebreaker</option><option value="1">Tiebreaker 1</option><option value="2">Tiebreaker 2</option><option value="3">Tiebreaker 3</option></select></label>
           <div class="pick-actions"><button class="button button--primary" type="submit">Add Game {next_game_number:02d}</button></div>
         </form>
       </section>
@@ -1436,15 +1486,18 @@ def render_commissioner_picks(conn, account, week_id=None, entry_id=None, messag
 
     pick, selections = fetch_pick_bundle(conn, week["id"], selected_entry["id"])
     games = fetch_week_games(conn, week["id"])
-    tiebreakers = fetch_week_tiebreakers(conn, week["id"])
     cards = []
     for game in games:
         options = "".join(
             f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {"checked" if selections.get(game["id"]) == team else ""} /><span>{esc(team)}</span></label>'
             for team in (game["away_team"], game["home_team"])
         )
+        tiebreaker_field = (
+            f'<label class="tiebreaker-game-field">Tiebreaker {game["tiebreaker_position"]}: total points<input type="number" min="0" name="tb_{game["tiebreaker_position"]}" value="{esc(tiebreaker_value(pick, game["tiebreaker_position"]))}" /></label>'
+            if game["tiebreaker_position"] else ""
+        )
         cards.append(
-            f'<fieldset class="pick-game-card"><legend>{esc(game["code"])}: {esc(game["away_team"])} at {esc(game["home_team"])}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{options}</div></fieldset>'
+            f'<fieldset class="pick-game-card"><legend>{esc(game["code"])}: {esc(game["away_team"])} at {esc(game["home_team"])}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{options}</div>{tiebreaker_field}</fieldset>'
         )
     notice = f'<div class="alert alert--success">{esc(message)}</div>' if message else ""
     body = f"""
@@ -1463,7 +1516,6 @@ def render_commissioner_picks(conn, account, week_id=None, entry_id=None, messag
         <form class="pick-form" method="post" action="/commissioner/picks/save">
           <input type="hidden" name="week_id" value="{week['id']}" /><input type="hidden" name="entry_id" value="{selected_entry['id']}" />
           <div class="pick-game-grid">{''.join(cards)}</div>
-          <div class="form-row tiebreaker-row">{''.join(f'<label class="tiebreaker-field">{esc(tb["prompt"])}<input type="number" min="0" name="tb_{tb["position"]}" value="{esc(tiebreaker_value(pick, tb["position"]))}" /></label>' for tb in tiebreakers)}</div>
           <div class="pick-actions"><button class="button button--primary" type="submit">Save available picks</button><span class="pill">{esc(selected_entry['display_name'])} is selected</span></div>
         </form>
       </section>
@@ -1516,6 +1568,10 @@ def render_game_editor(conn, account, game_id):
             <label>Favorite<select name="favorite_side"><option value="away" {"selected" if favorite_side == "away" else ""}>Away team</option><option value="home" {"selected" if favorite_side == "home" else ""}>Home team</option><option value="none" {"selected" if favorite_side == "none" else ""}>Pick 'em</option></select></label>
             <label>Favorite by<input type="number" min="0" step="0.5" name="spread" value="{esc(spread_value)}" placeholder="Example: 3.5" /></label>
           </div></fieldset>
+          <fieldset class="game-editor-group"><legend>Tiebreaker</legend><div class="game-editor-grid">
+            <label>Use this game for<select name="tiebreaker_position"><option value="0" {"selected" if not game["tiebreaker_position"] else ""}>Not a tiebreaker</option><option value="1" {"selected" if game["tiebreaker_position"] == 1 else ""}>Tiebreaker 1</option><option value="2" {"selected" if game["tiebreaker_position"] == 2 else ""}>Tiebreaker 2</option><option value="3" {"selected" if game["tiebreaker_position"] == 3 else ""}>Tiebreaker 3</option></select></label>
+            <div class="game-editor-help">Assigning a slot moves it from any other game in this week.</div>
+          </div></fieldset>
           <fieldset class="game-editor-group"><legend>Card order</legend><div class="game-editor-grid">
             <label>Place this game as
               <select name="position">{''.join(f'<option value="{position}" {"selected" if position == game_position else ""}>Game {position:02d}</option>' for position in range(1, len(ordered_games) + 1))}</select>
@@ -1557,7 +1613,6 @@ def render_picks(conn, account, message="", active_entry_id=None):
     active_entry_id = active_entry_id or get_active_entry_id_from_query_or_default(entries)
     active_entry = next((entry for entry in entries if entry["id"] == active_entry_id), entries[0] if entries else None)
     pick, selections = fetch_pick_bundle(conn, week["id"], active_entry["id"])
-    tiebreakers = fetch_week_tiebreakers(conn, week["id"])
     games = fetch_week_games(conn, week["id"])
     weekly_result = next(
         (item for item in compute_week_results(conn, week["id"]) if item["entry_id"] == active_entry["id"]),
@@ -1573,6 +1628,13 @@ def render_picks(conn, account, message="", active_entry_id=None):
     cards = []
     for game in games:
         game_locked = is_game_locked(game)
+        tiebreaker_field = ""
+        if game["tiebreaker_position"]:
+            position = game["tiebreaker_position"]
+            if game_locked:
+                tiebreaker_field = f'<div class="tiebreaker-game-value"><span>Tiebreaker {position} total points</span><strong>{esc(tiebreaker_value(pick, position) or "No guess submitted")}</strong></div>'
+            else:
+                tiebreaker_field = f'<label class="tiebreaker-game-field">Tiebreaker {position}: total points<input type="number" min="0" name="tb_{position}" value="{esc(tiebreaker_value(pick, position))}" data-tiebreaker-game="{game["id"]}" data-tiebreaker-position="{position}" required /></label>'
         options = []
         if game_locked:
             locked_pick = selections.get(game["id"])
@@ -1586,7 +1648,7 @@ def render_picks(conn, account, message="", active_entry_id=None):
                     f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {checked} /><span>{esc(team)}</span></label>'
                 )
         cards.append(
-            f'<fieldset class="pick-game-card {"pick-game-card--locked" if game_locked else ""}"><legend>{esc(game["code"])}: {esc(game["away_team"])} at {esc(game["home_team"])}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{"".join(options)}</div></fieldset>'
+            f'<fieldset class="pick-game-card {"pick-game-card--locked" if game_locked else ""}"><legend>{esc(game["code"])}: {esc(game["away_team"])} at {esc(game["home_team"])}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{"".join(options)}</div>{tiebreaker_field}</fieldset>'
         )
     entry_select = ""
     if len(entries) > 1:
@@ -1607,14 +1669,20 @@ def render_picks(conn, account, message="", active_entry_id=None):
           if (!form || !status || !window.fetch) return;
 
           let saveQueue = Promise.resolve();
-          form.querySelectorAll('input[type="radio"][name^="pick_"]').forEach((input) => {
-            input.addEventListener("change", () => {
+          const saveGame = (gameId, selectedTeam) => {
+              const tiebreakerField = form.querySelector(`[data-tiebreaker-game="${gameId}"]`);
+              if (tiebreakerField && !tiebreakerField.value.trim()) {
+                status.textContent = "Enter the total-points tiebreaker to save this pick.";
+                status.classList.add("autosave-status--error");
+                return;
+              }
               const entryField = form.querySelector('[name="entry_id"]');
               const payload = new URLSearchParams({
                 entry_id: entryField ? entryField.value : form.dataset.entryId,
-                game_id: input.name.replace("pick_", ""),
-                selected_team: input.value,
+                game_id: gameId,
+                selected_team: selectedTeam,
               });
+              if (tiebreakerField) payload.set("tiebreaker_value", tiebreakerField.value);
               status.textContent = "Saving pick...";
               status.classList.remove("autosave-status--error");
               saveQueue = saveQueue.catch(() => {}).then(async () => {
@@ -1630,6 +1698,15 @@ def render_picks(conn, account, message="", active_entry_id=None):
                 status.textContent = error.message || "Unable to save that pick. Please try again.";
                 status.classList.add("autosave-status--error");
               });
+          };
+          form.querySelectorAll('input[type="radio"][name^="pick_"]').forEach((input) => {
+            input.addEventListener("change", () => saveGame(input.name.replace("pick_", ""), input.value));
+          });
+          form.querySelectorAll("[data-tiebreaker-game]").forEach((input) => {
+            input.addEventListener("change", () => {
+              const selected = form.querySelector(`input[name="pick_${input.dataset.tiebreakerGame}"]:checked`);
+              if (selected) saveGame(input.dataset.tiebreakerGame, selected.value);
+              else status.textContent = "Choose a team to save this tiebreaker.";
             });
           });
         })();
@@ -1649,10 +1726,7 @@ def render_picks(conn, account, message="", active_entry_id=None):
           </div>
           {entry_select}
           <div class="pick-game-grid">{''.join(cards)}</div>
-          <div class="form-row tiebreaker-row">
-            {''.join(f'<label class="tiebreaker-field">{esc(tb["prompt"])}<input type="number" min="0" name="tb_{tb["position"]}" value="{esc(tiebreaker_value(pick, tb["position"]))}" /></label>' for tb in tiebreakers)}
-          </div>
-          <div class="pick-actions"><button class="button button--primary" type="submit">Save tiebreakers</button><span class="autosave-status" aria-live="polite">Picks save automatically.</span><span class="pill">{esc(active_entry["display_name"])} is active</span></div>
+          <div class="pick-actions"><span class="autosave-status" aria-live="polite">Picks save automatically once a team and any required total are selected.</span><span class="pill">{esc(active_entry["display_name"])} is active</span></div>
         </form>
       </section>
       {autosave_script}
@@ -1669,6 +1743,7 @@ def get_active_entry_id_from_query_or_default(entries):
 def render_leaderboard(conn, account):
     week = fetch_current_week(conn)
     results = compute_week_results(conn, week["id"])
+    tiebreaker_games = {game["tiebreaker_position"]: game for game in fetch_week_tiebreaker_games(conn, week["id"])}
     season = compute_season_results(conn)
     weeks = conn.execute("SELECT * FROM weeks ORDER BY id").fetchall()
     weekly_rows = []
@@ -1684,7 +1759,12 @@ def render_leaderboard(conn, account):
         else:
             status_text = "No picks yet"
             status_class = "status--warn"
-        tiebreaker_values = [value if value is not None else "-" for value in item["tiebreaker_values"]]
+        tiebreaker_values = [
+            value if tiebreaker_games.get(position) and has_game_started(tiebreaker_games[position]) and value is not None
+            else "-" if tiebreaker_games.get(position) and has_game_started(tiebreaker_games[position])
+            else "Hidden"
+            for position, value in enumerate(item["tiebreaker_values"], start=1)
+        ]
         weekly_rows.append(
             "<tr>"
             f"<td>#{item['rank']}</td>"
@@ -1834,7 +1914,7 @@ def render_player(conn, account, entry_id, week_id):
         return render_layout("Pigskin Junkies | Entry Detail", body, "/leaderboard", account)
     pick, selections = fetch_pick_bundle(conn, week["id"], entry["id"])
     games = fetch_week_games(conn, week["id"])
-    tiebreakers = fetch_week_tiebreakers(conn, week["id"])
+    tiebreaker_games = {game["tiebreaker_position"]: game for game in fetch_week_tiebreaker_games(conn, week["id"])}
     result = next((row for row in compute_week_results(conn, week["id"]) if row["entry_id"] == entry["id"]), None)
     rows = []
     mobile_rows = []
@@ -1862,6 +1942,15 @@ def render_player(conn, account, entry_id, week_id):
               <div class="player-pick-card__details"><span><small>Pick</small>{esc(selected)}</span><span><small>ATS winner</small>{esc(winner or "TBD")}</span></div>
             </article>'''
         )
+    tiebreaker_cards = []
+    for position in range(1, 4):
+        game = tiebreaker_games.get(position)
+        if not game:
+            continue
+        value = tiebreaker_value(pick, position) if has_game_started(game) else "Hidden until kickoff"
+        tiebreaker_cards.append(
+            f'<div class="summary-card"><strong>Tiebreaker {position}: {esc(game["away_team"])} at {esc(game["home_team"])}</strong><span>{esc(value or "-")}</span></div>'
+        )
     body = f"""
       <section class="page-hero">
         <div><p class="eyebrow">Participant detail</p><h1>{esc(entry["display_name"])} picks</h1></div>
@@ -1877,9 +1966,9 @@ def render_player(conn, account, entry_id, week_id):
           </div>
         </article>
         <article class="panel">
-          <p class="section-label">Tiebreakers</p><h2>Guesses</h2>
+          <p class="section-label">Tiebreakers</p><h2>Game totals</h2>
           <div class="stack player-tiebreakers">
-            {''.join(f'<div class="summary-card"><strong>{esc(tb["prompt"])}</strong><span>{esc(tiebreaker_value(pick, tb["position"]) or "-")}</span></div>' for tb in tiebreakers)}
+            {''.join(tiebreaker_cards) or '<div class="summary-card"><strong>No tiebreaker games assigned</strong><span>-</span></div>'}
           </div>
         </article>
       </section>
@@ -2099,6 +2188,7 @@ def add_game(conn, form):
     site_note = (form.get("site_note") or "").strip()
     favorite_side = form.get("favorite_side") or "none"
     spread_raw = (form.get("spread") or "").strip()
+    tiebreaker_position = tiebreaker_position_from_form(form)
     if not week or not all([away_team, home_team, kickoff]) or away_team.lower() == home_team.lower():
         return False
     try:
@@ -2113,13 +2203,14 @@ def add_game(conn, form):
         favorite = ""
     spread_text = f"{favorite} -{spread:g}" if favorite and spread else "Pick 'em"
     game_count = conn.execute("SELECT COUNT(*) AS count FROM games WHERE week_id = ?", (week["id"],)).fetchone()["count"]
-    conn.execute(
+    game_id = conn.execute(
         """
         INSERT INTO games (week_id, code, away_team, home_team, kickoff, site_note, spread_text, display_order, winner, score_away, score_home)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, 0)
         """,
         (week["id"], f"Game {game_count + 1:02d}", away_team, home_team, kickoff, site_note, spread_text, game_count + 1),
-    )
+    ).lastrowid
+    set_game_tiebreaker_position(conn, week["id"], game_id, tiebreaker_position)
     conn.commit()
     return True
 
@@ -2132,6 +2223,7 @@ def update_game(conn, form, game_id):
     site_note = (form.get("site_note") or "").strip()
     favorite_side = form.get("favorite_side") or "none"
     spread_raw = (form.get("spread") or "").strip()
+    tiebreaker_position = tiebreaker_position_from_form(form)
     if not game or not all([away_team, home_team, kickoff]) or away_team.lower() == home_team.lower():
         return None
     try:
@@ -2144,6 +2236,7 @@ def update_game(conn, form, game_id):
         "UPDATE games SET away_team = ?, home_team = ?, kickoff = ?, site_note = ?, spread_text = ? WHERE id = ?",
         (away_team, home_team, kickoff, site_note, spread_text, game_id),
     )
+    set_game_tiebreaker_position(conn, game["week_id"], game_id, tiebreaker_position)
     ordered_game_ids = [listed_game["id"] for listed_game in fetch_week_games(conn, game["week_id"])]
     ordered_game_ids.remove(game_id)
     try:
@@ -2260,18 +2353,39 @@ def autosave_pick(conn, account, form):
     if is_game_locked(game):
         return None, "This game is locked, so its pick can no longer be changed."
 
+    tiebreaker_position = game["tiebreaker_position"]
+    tiebreaker_value_to_save = None
+    if tiebreaker_position:
+        try:
+            tiebreaker_value_to_save = int(form.get("tiebreaker_value", ""))
+        except ValueError:
+            return None, "Enter a total-points tiebreaker before saving this pick."
+        if tiebreaker_value_to_save < 0:
+            return None, "Tiebreaker totals cannot be negative."
+
     current = conn.execute(
         "SELECT * FROM picks WHERE week_id = ? AND entry_id = ?", (week["id"], entry_id)
     ).fetchone()
     if current:
         pick_id = current["id"]
-        conn.execute("UPDATE picks SET submitted_at = ? WHERE id = ?", (now_iso(), pick_id))
+        if tiebreaker_position:
+            conn.execute(
+                f"UPDATE picks SET submitted_at = ?, tiebreaker_{tiebreaker_position} = ? WHERE id = ?",
+                (now_iso(), tiebreaker_value_to_save, pick_id),
+            )
+        else:
+            conn.execute("UPDATE picks SET submitted_at = ? WHERE id = ?", (now_iso(), pick_id))
     else:
         pick_id = conn.execute(
             """INSERT INTO picks (week_id, entry_id, submitted_at, tiebreaker_1, tiebreaker_2, tiebreaker_3)
                VALUES (?, ?, ?, 0, 0, 0)""",
             (week["id"], entry_id, now_iso()),
         ).lastrowid
+        if tiebreaker_position:
+            conn.execute(
+                f"UPDATE picks SET tiebreaker_{tiebreaker_position} = ? WHERE id = ?",
+                (tiebreaker_value_to_save, pick_id),
+            )
     conn.execute(
         """INSERT INTO pick_items (pick_id, game_id, selected_team) VALUES (?, ?, ?)
            ON CONFLICT(pick_id, game_id) DO UPDATE SET selected_team = excluded.selected_team""",
