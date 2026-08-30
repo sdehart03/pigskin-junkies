@@ -1843,7 +1843,7 @@ def render_all_picks(conn, account):
             f"<td>#{result['rank']}</td>"
             f'<td><a class="leaderboard-link" href="/player?entry_id={result["entry_id"]}&week_id={week["id"]}">{esc(result["display_name"])}</a></td>'
             + "".join(game_cells)
-            + "</tr>"
+            + f"<td><strong>{result['wins']}/{result['total_games']}</strong></td></tr>"
         )
     game_headers = "".join(
         f'<th><span>{esc(game["code"])}</span><small>{esc(game["away_team"])} at {esc(game["home_team"])}</small></th>'
@@ -1857,7 +1857,7 @@ def render_all_picks(conn, account):
       <section class="panel">
         <div class="section-heading"><div><p class="section-label">Full field</p><h2>All participant picks</h2></div><span class="badge">{len(results)} entries</span></div>
         <div class="callout">Each game column unlocks at its own kickoff. Until then, every selection remains private. Scroll or swipe the table left and right to see every game.</div>
-        <div class="table-wrap full-picks-table" style="width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden;"><table><thead><tr><th>Rank</th><th>Entry</th>{game_headers}</tr></thead><tbody>{''.join(pick_rows)}</tbody></table></div>
+        <div class="table-wrap full-picks-table" style="width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden;"><table><thead><tr><th>Rank</th><th>Entry</th>{game_headers}<th>Weekly total</th></tr></thead><tbody>{''.join(pick_rows)}</tbody></table></div>
       </section>
     """
     return render_layout("Pigskin Junkies | Full Pick Table", body, "/leaderboard", account)
