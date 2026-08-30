@@ -332,6 +332,20 @@ thead th,
   gap: 3px;
 }
 
+.player-summary .summary-card,
+.player-tiebreakers .summary-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.player-summary .summary-card span,
+.player-tiebreakers .summary-card span {
+  color: var(--muted);
+  text-align: right;
+}
+
 .missing-player span {
   color: var(--muted);
   font-size: 0.9rem;
