@@ -1753,16 +1753,6 @@ def render_leaderboard(conn, account):
     weekly_rows = []
     weekly_mobile_cards = []
     for item in results:
-        previous = compute_previous_rank(conn, week["id"], item["entry_id"])
-        if item["complete"]:
-            status_text = movement_text(item["rank"], previous)
-            status_class = "status--good"
-        elif item["submitted"]:
-            status_text = "In progress"
-            status_class = "status--warn"
-        else:
-            status_text = "No picks yet"
-            status_class = "status--warn"
         tiebreaker_values = {
             position: item["tiebreaker_values"][position - 1] if item["tiebreaker_values"][position - 1] is not None else "-"
             for position in visible_tiebreaker_positions
@@ -1773,7 +1763,6 @@ def render_leaderboard(conn, account):
             f'<td><a class="leaderboard-link" href="/player?entry_id={item["entry_id"]}&week_id={week["id"]}">{esc(item["display_name"])}</a></td>'
             f"<td>{item['wins']}/{item['total_games']}</td>"
             + "".join(f"<td>{esc(tiebreaker_values[position])}</td>" for position in visible_tiebreaker_positions)
-            + f'<td class="status {status_class}">{status_text}</td>'
             + "</tr>"
         )
         weekly_mobile_cards.append(
@@ -1781,7 +1770,6 @@ def render_leaderboard(conn, account):
               <div><span class="leaderboard-mobile-card__rank">#{item["rank"]}</span><strong>{esc(item["display_name"])}</strong></div>
               <div class="leaderboard-mobile-card__score"><span>Weekly points</span><strong>{item["wins"]}/{item["total_games"]}</strong></div>
               {f'<div class="leaderboard-mobile-tiebreakers">{"".join(f"<span>TB{position} <strong>{esc(tiebreaker_values[position])}</strong></span>" for position in visible_tiebreaker_positions)}</div>' if visible_tiebreaker_positions else ''}
-              <span class="status {status_class}">{status_text}</span>
             </a>'''
         )
     season_rows = []
@@ -1824,7 +1812,7 @@ def render_leaderboard(conn, account):
       <section class="dashboard-grid">
         <article class="panel">
           <div class="section-heading"><div><p class="section-label">This week</p><h2>Weekly leaderboard</h2></div><span class="badge">Click a name to inspect picks</span></div>
-          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th><th>Weekly points</th>{''.join(f'<th>Tiebreaker {position}</th>' for position in visible_tiebreaker_positions)}<th>Status</th></tr></thead><tbody>{''.join(weekly_rows)}</tbody></table></div>
+          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th><th>Weekly points</th>{''.join(f'<th>Tiebreaker {position}</th>' for position in visible_tiebreaker_positions)}</tr></thead><tbody>{''.join(weekly_rows)}</tbody></table></div>
           <div class="leaderboard-mobile-list">{''.join(weekly_mobile_cards)}</div>
         </article>
         <article class="panel">
