@@ -1856,7 +1856,7 @@ def render_all_picks(conn, account):
       </section>
       <section class="panel">
         <div class="section-heading"><div><p class="section-label">Full field</p><h2>All participant picks</h2></div><span class="badge">{len(results)} entries</span></div>
-        <div class="callout">Each game column unlocks at its own kickoff. Until then, every selection remains private.</div>
+        <div class="callout">Each game column unlocks at its own kickoff. Until then, every selection remains private. Scroll or swipe the table left and right to see every game.</div>
         <div class="table-wrap full-picks-table"><table><thead><tr><th>Rank</th><th>Entry</th>{game_headers}</tr></thead><tbody>{''.join(pick_rows)}</tbody></table></div>
       </section>
     """
