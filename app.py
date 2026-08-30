@@ -933,7 +933,7 @@ def build_nav(active):
 
 def build_auth_controls(account):
     if not account:
-        return '<a class="auth-chip" href="/login">Sign In</a>'
+        return '<a class="auth-chip" href="/login">Sign In</a><a class="auth-chip auth-chip--register" href="/register">Register</a>'
     badge = "Commissioner" if account["is_commissioner"] else "Participant"
     return (
         '<details class="account-menu">'
