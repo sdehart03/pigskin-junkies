@@ -1440,7 +1440,7 @@ def render_commissioner_picks(conn, account, week_id=None, entry_id=None, messag
     cards = []
     for game in games:
         options = "".join(
-            f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {"checked" if selections.get(game["id"]) == team else ""} required /><span>{esc(team)}</span></label>'
+            f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {"checked" if selections.get(game["id"]) == team else ""} /><span>{esc(team)}</span></label>'
             for team in (game["away_team"], game["home_team"])
         )
         cards.append(
@@ -1459,12 +1459,12 @@ def render_commissioner_picks(conn, account, week_id=None, entry_id=None, messag
       </form>
       <section class="panel">
         {notice}
-        <div class="commissioner-pick-banner"><div><p class="section-label">Editing picks for</p><h2>{esc(selected_entry['display_name'])}</h2><span>{esc(selected_entry['account_name'])} | {esc(week['label'])}</span></div><div class="callout">Commissioner changes can be saved after game locks. Verify the entry and week carefully before saving.</div></div>
+        <div class="commissioner-pick-banner"><div><p class="section-label">Editing picks for</p><h2>{esc(selected_entry['display_name'])}</h2><span>{esc(selected_entry['account_name'])} | {esc(week['label'])}</span></div><div class="callout">Save any portion of a card, including locked games entered after kickoff. Leave unknown picks blank and return later without overwriting saved selections.</div></div>
         <form class="pick-form" method="post" action="/commissioner/picks/save">
           <input type="hidden" name="week_id" value="{week['id']}" /><input type="hidden" name="entry_id" value="{selected_entry['id']}" />
           <div class="pick-game-grid">{''.join(cards)}</div>
-          <div class="form-row tiebreaker-row">{''.join(f'<label class="tiebreaker-field">{esc(tb["prompt"])}<input type="number" min="0" name="tb_{tb["position"]}" value="{esc(tiebreaker_value(pick, tb["position"]))}" required /></label>' for tb in tiebreakers)}</div>
-          <div class="pick-actions"><button class="button button--primary" type="submit">Save commissioner changes</button><span class="pill">{esc(selected_entry['display_name'])} is selected</span></div>
+          <div class="form-row tiebreaker-row">{''.join(f'<label class="tiebreaker-field">{esc(tb["prompt"])}<input type="number" min="0" name="tb_{tb["position"]}" value="{esc(tiebreaker_value(pick, tb["position"]))}" /></label>' for tb in tiebreakers)}</div>
+          <div class="pick-actions"><button class="button button--primary" type="submit">Save available picks</button><span class="pill">{esc(selected_entry['display_name'])} is selected</span></div>
         </form>
       </section>
     """
@@ -2291,12 +2291,26 @@ def save_commissioner_picks(conn, form):
     if not week or not entry:
         return None
     games = fetch_week_games(conn, week["id"])
-    if any(form.get(f"pick_{game['id']}") not in {game["away_team"], game["home_team"]} for game in games):
-        return None
+    selections = {}
+    for game in games:
+        selected_team = form.get(f"pick_{game['id']}")
+        if not selected_team:
+            continue
+        if selected_team not in {game["away_team"], game["home_team"]}:
+            return None
+        selections[game["id"]] = selected_team
     current = conn.execute(
         "SELECT * FROM picks WHERE week_id = ? AND entry_id = ?", (week["id"], entry_id)
     ).fetchone()
-    tiebreakers = [int(form.get(f"tb_{position}") or 0) for position in range(1, 4)]
+    try:
+        tiebreakers = [
+            int(form[f"tb_{position}"])
+            if form.get(f"tb_{position}") not in (None, "")
+            else (current[f"tiebreaker_{position}"] if current else 0)
+            for position in range(1, 4)
+        ]
+    except ValueError:
+        return None
     if current:
         pick_id = current["id"]
         conn.execute(
@@ -2310,10 +2324,13 @@ def save_commissioner_picks(conn, form):
             (week["id"], entry_id, now_iso(), *tiebreakers),
         ).lastrowid
     for game in games:
+        selected_team = selections.get(game["id"])
+        if not selected_team:
+            continue
         conn.execute(
             """INSERT INTO pick_items (pick_id, game_id, selected_team) VALUES (?, ?, ?)
                ON CONFLICT(pick_id, game_id) DO UPDATE SET selected_team = excluded.selected_team""",
-            (pick_id, game["id"], form[f"pick_{game['id']}"]),
+            (pick_id, game["id"], selected_team),
         )
     conn.commit()
     return {"week_id": week["id"], "entry_id": entry_id}
