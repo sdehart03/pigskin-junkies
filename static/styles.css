@@ -490,8 +490,18 @@ thead th,
   gap: 10px;
 }
 
+.full-picks-table {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: scroll;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  scrollbar-color: var(--brand) rgba(255, 255, 255, 0.08);
+}
+
 .full-picks-table table {
-  min-width: 1700px;
+  width: max-content;
+  min-width: 1700px !important;
 }
 
 .full-picks-table th {
