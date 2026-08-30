@@ -1744,6 +1744,10 @@ def render_leaderboard(conn, account):
     week = fetch_current_week(conn)
     results = compute_week_results(conn, week["id"])
     tiebreaker_games = {game["tiebreaker_position"]: game for game in fetch_week_tiebreaker_games(conn, week["id"])}
+    visible_tiebreaker_positions = [
+        position for position in range(1, 4)
+        if tiebreaker_games.get(position) and has_game_started(tiebreaker_games[position])
+    ]
     season = compute_season_results(conn)
     weeks = conn.execute("SELECT * FROM weeks ORDER BY id").fetchall()
     weekly_rows = []
@@ -1759,28 +1763,24 @@ def render_leaderboard(conn, account):
         else:
             status_text = "No picks yet"
             status_class = "status--warn"
-        tiebreaker_values = [
-            value if tiebreaker_games.get(position) and has_game_started(tiebreaker_games[position]) and value is not None
-            else "-" if tiebreaker_games.get(position) and has_game_started(tiebreaker_games[position])
-            else "Hidden"
-            for position, value in enumerate(item["tiebreaker_values"], start=1)
-        ]
+        tiebreaker_values = {
+            position: item["tiebreaker_values"][position - 1] if item["tiebreaker_values"][position - 1] is not None else "-"
+            for position in visible_tiebreaker_positions
+        }
         weekly_rows.append(
             "<tr>"
             f"<td>#{item['rank']}</td>"
             f'<td><a class="leaderboard-link" href="/player?entry_id={item["entry_id"]}&week_id={week["id"]}">{esc(item["display_name"])}</a></td>'
             f"<td>{item['wins']}/{item['total_games']}</td>"
-            f"<td>{esc(tiebreaker_values[0])}</td>"
-            f"<td>{esc(tiebreaker_values[1])}</td>"
-            f"<td>{esc(tiebreaker_values[2])}</td>"
-            f'<td class="status {status_class}">{status_text}</td>'
-            "</tr>"
+            + "".join(f"<td>{esc(tiebreaker_values[position])}</td>" for position in visible_tiebreaker_positions)
+            + f'<td class="status {status_class}">{status_text}</td>'
+            + "</tr>"
         )
         weekly_mobile_cards.append(
             f'''<a class="leaderboard-mobile-card" href="/player?entry_id={item["entry_id"]}&week_id={week["id"]}">
               <div><span class="leaderboard-mobile-card__rank">#{item["rank"]}</span><strong>{esc(item["display_name"])}</strong></div>
               <div class="leaderboard-mobile-card__score"><span>Weekly points</span><strong>{item["wins"]}/{item["total_games"]}</strong></div>
-              <div class="leaderboard-mobile-tiebreakers"><span>TB1 <strong>{esc(tiebreaker_values[0])}</strong></span><span>TB2 <strong>{esc(tiebreaker_values[1])}</strong></span><span>TB3 <strong>{esc(tiebreaker_values[2])}</strong></span></div>
+              {f'<div class="leaderboard-mobile-tiebreakers">{"".join(f"<span>TB{position} <strong>{esc(tiebreaker_values[position])}</strong></span>" for position in visible_tiebreaker_positions)}</div>' if visible_tiebreaker_positions else ''}
               <span class="status {status_class}">{status_text}</span>
             </a>'''
         )
@@ -1824,7 +1824,7 @@ def render_leaderboard(conn, account):
       <section class="dashboard-grid">
         <article class="panel">
           <div class="section-heading"><div><p class="section-label">This week</p><h2>Weekly leaderboard</h2></div><span class="badge">Click a name to inspect picks</span></div>
-          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th><th>Weekly points</th><th>Tiebreaker 1</th><th>Tiebreaker 2</th><th>Tiebreaker 3</th><th>Status</th></tr></thead><tbody>{''.join(weekly_rows)}</tbody></table></div>
+          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th><th>Weekly points</th>{''.join(f'<th>Tiebreaker {position}</th>' for position in visible_tiebreaker_positions)}<th>Status</th></tr></thead><tbody>{''.join(weekly_rows)}</tbody></table></div>
           <div class="leaderboard-mobile-list">{''.join(weekly_mobile_cards)}</div>
         </article>
         <article class="panel">
