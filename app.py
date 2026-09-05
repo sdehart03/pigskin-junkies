@@ -1004,7 +1004,7 @@ def render_layout(title, body, active, account):
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260830-full-picks-scroll" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260905-pick-results" />
   </head>
   <body>
     <div class="site-shell">
@@ -1909,8 +1909,19 @@ def render_all_picks(conn, account):
         _, selections = fetch_pick_bundle(conn, week["id"], result["entry_id"])
         game_cells = []
         for game in games:
-            pick = selections.get(game["id"], "-") if has_game_started(game) else "Private"
-            game_cells.append(f'<td>{esc(pick)}</td>')
+            if not has_game_started(game):
+                pick, result_class = "Private", "pick-result--private"
+            else:
+                pick = selections.get(game["id"], "-")
+                if not game["winner"]:
+                    result_class = "pick-result--pending"
+                elif pick == "-":
+                    result_class = "pick-result--missing"
+                elif pick == game["winner"]:
+                    result_class = "pick-result--correct"
+                else:
+                    result_class = "pick-result--incorrect"
+            game_cells.append(f'<td class="pick-result {result_class}">{esc(pick)}</td>')
         pick_rows.append(
             "<tr>"
             f"<td>#{result['rank']}</td>"
