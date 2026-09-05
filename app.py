@@ -210,6 +210,32 @@ def ensure_schema(conn):
                     "UPDATE games SET tiebreaker_position = ? WHERE id = ?",
                     (tiebreaker["position"], game["id"]),
                 )
+    # Early databases did not consistently enforce one pick record per entry
+    # per week. Keep the most recently saved record and discard stale copies so
+    # a leaderboard never combines picks from multiple versions of one card.
+    duplicate_groups = conn.execute(
+        """
+        SELECT week_id, entry_id
+        FROM picks
+        GROUP BY week_id, entry_id
+        HAVING COUNT(*) > 1
+        """
+    ).fetchall()
+    for group in duplicate_groups:
+        pick_rows = conn.execute(
+            """
+            SELECT id FROM picks
+            WHERE week_id = ? AND entry_id = ?
+            ORDER BY submitted_at DESC, id DESC
+            """,
+            (group["week_id"], group["entry_id"]),
+        ).fetchall()
+        stale_pick_ids = [row["id"] for row in pick_rows[1:]]
+        if stale_pick_ids:
+            placeholders = ", ".join("?" for _ in stale_pick_ids)
+            conn.execute(f"DELETE FROM pick_items WHERE pick_id IN ({placeholders})", stale_pick_ids)
+            conn.execute(f"DELETE FROM picks WHERE id IN ({placeholders})", stale_pick_ids)
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS picks_one_per_entry_week ON picks(week_id, entry_id)")
 
 
 def seed_database(conn):
@@ -694,10 +720,7 @@ def fetch_all_weeks(conn):
 
 
 def fetch_pick_bundle(conn, week_id, entry_id):
-    pick = conn.execute(
-        "SELECT * FROM picks WHERE week_id = ? AND entry_id = ?",
-        (week_id, entry_id),
-    ).fetchone()
+    pick = fetch_current_pick(conn, week_id, entry_id)
     selections = {}
     if pick:
         for row in conn.execute(
@@ -706,6 +729,19 @@ def fetch_pick_bundle(conn, week_id, entry_id):
         ).fetchall():
             selections[row["game_id"]] = row["selected_team"]
     return pick, selections
+
+
+def fetch_current_pick(conn, week_id, entry_id):
+    """Return the newest version of an entry's card for a week."""
+    return conn.execute(
+        """
+        SELECT * FROM picks
+        WHERE week_id = ? AND entry_id = ?
+        ORDER BY submitted_at DESC, id DESC
+        LIMIT 1
+        """,
+        (week_id, entry_id),
+    ).fetchone()
 
 
 def tiebreaker_value(pick, position):
@@ -790,19 +826,26 @@ def compute_week_results(conn, week_id):
         FROM picks p
         JOIN entries e ON e.id = p.entry_id
         WHERE p.week_id = ?
+        ORDER BY p.submitted_at, p.id
         """,
         (week_id,),
     ).fetchall()
-    picks_by_entry = {row["entry_id"]: row for row in pick_rows}
-    item_rows = conn.execute(
-        """
-        SELECT p.entry_id, pi.game_id, pi.selected_team
-        FROM pick_items pi
-        JOIN picks p ON p.id = pi.pick_id
-        WHERE p.week_id = ?
-        """,
-        (week_id,),
-    ).fetchall()
+    picks_by_entry = {}
+    for row in pick_rows:
+        picks_by_entry[row["entry_id"]] = row
+    active_pick_ids = [row["id"] for row in picks_by_entry.values()]
+    item_rows = []
+    if active_pick_ids:
+        placeholders = ", ".join("?" for _ in active_pick_ids)
+        item_rows = conn.execute(
+            f"""
+            SELECT p.entry_id, pi.game_id, pi.selected_team
+            FROM pick_items pi
+            JOIN picks p ON p.id = pi.pick_id
+            WHERE pi.pick_id IN ({placeholders})
+            """,
+            active_pick_ids,
+        ).fetchall()
     selections = {}
     for row in item_rows:
         selections.setdefault(row["entry_id"], {})[row["game_id"]] = row["selected_team"]
@@ -2367,10 +2410,7 @@ def save_picks(conn, account, form):
         return "That entry does not belong to the signed-in account."
     tiebreakers = fetch_week_tiebreakers(conn, week["id"])
     games = fetch_week_games(conn, week["id"])
-    current = conn.execute(
-        "SELECT * FROM picks WHERE week_id = ? AND entry_id = ?",
-        (week["id"], selected_entry_id),
-    ).fetchone()
+    current = fetch_current_pick(conn, week["id"], selected_entry_id)
     tb_game = next((game for game in games if game["code"] == "Game 20"), games[-1] if games else None)
     tiebreakers_locked = bool(tb_game and is_game_locked(tb_game))
     if current:
@@ -2450,9 +2490,7 @@ def autosave_pick(conn, account, form):
         if tiebreaker_value_to_save < 0:
             return None, "Tiebreaker totals cannot be negative."
 
-    current = conn.execute(
-        "SELECT * FROM picks WHERE week_id = ? AND entry_id = ?", (week["id"], entry_id)
-    ).fetchone()
+    current = fetch_current_pick(conn, week["id"], entry_id)
     if current:
         pick_id = current["id"]
         if tiebreaker_position:
@@ -2500,9 +2538,7 @@ def save_commissioner_picks(conn, form):
         if selected_team not in {game["away_team"], game["home_team"]}:
             return None
         selections[game["id"]] = selected_team
-    current = conn.execute(
-        "SELECT * FROM picks WHERE week_id = ? AND entry_id = ?", (week["id"], entry_id)
-    ).fetchone()
+    current = fetch_current_pick(conn, week["id"], entry_id)
     try:
         tiebreakers = [
             int(form[f"tb_{position}"])
