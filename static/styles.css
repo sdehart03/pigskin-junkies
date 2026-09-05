@@ -568,6 +568,22 @@ thead th,
   line-height: 1.25;
 }
 
+.pick-result--correct {
+  color: #54dc93;
+  font-weight: 700;
+}
+
+.pick-result--incorrect {
+  color: #ff7d78;
+  font-weight: 700;
+}
+
+.pick-result--private,
+.pick-result--pending,
+.pick-result--missing {
+  color: var(--muted);
+}
+
 .pill,
 .badge {
   display: inline-flex;
