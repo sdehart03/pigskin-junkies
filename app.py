@@ -1854,9 +1854,9 @@ def render_leaderboard(conn, account):
         movement_html = f'<span class="rank-movement {movement_class}" title="{movement_label}" aria-label="{movement_label}">{movement_icon}</span>'
         season_rows.append(
             "<tr>"
-            f"<td>#{row['rank']}</td>"
+            f"<td>#{row['rank']} {movement_html}</td>"
             f'<td><a class="leaderboard-link" href="/player?entry_id={row["entry_id"]}&week_id={week["id"]}">{esc(row["display_name"])}</a></td>'
-            + f"<td><strong>{row['total']}</strong></td><td>{movement_html}</td></tr>"
+            + f"<td><strong>{row['total']}</strong></td></tr>"
         )
         season_mobile_cards.append(
             f'''<article class="leaderboard-mobile-card leaderboard-mobile-card--season">
@@ -1876,7 +1876,7 @@ def render_leaderboard(conn, account):
         </details>'''
 
     weekly_table_header = f"<th>Rank</th><th>Entry</th><th>Weekly points</th>{''.join(f'<th>Tiebreaker {position}</th>' for position in visible_tiebreaker_positions)}"
-    season_table_header = "<th>Rank</th><th>Entry</th><th>Total</th><th>Move</th>"
+    season_table_header = "<th>Rank</th><th>Entry</th><th>Total</th>"
     weekly_remainder = standings_remainder(weekly_table_header, weekly_rows, weekly_mobile_cards, "entries")
     season_remainder = standings_remainder(season_table_header, season_rows, season_mobile_cards, "entries")
     previous_week_recaps = []
