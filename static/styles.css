@@ -784,6 +784,24 @@ tbody tr:last-child td {
   padding: 0 0 10px;
 }
 
+.standings-expand {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.standings-expand summary {
+  cursor: pointer;
+  padding: 14px 0;
+  color: var(--accent);
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+}
+
+.standings-expand[open] summary {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+
 .season-history-week__list a {
   display: flex;
   justify-content: space-between;
