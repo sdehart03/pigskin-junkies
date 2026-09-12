@@ -1814,6 +1814,7 @@ def get_active_entry_id_from_query_or_default(entries):
 
 
 def render_leaderboard(conn, account):
+    standings_limit = 10
     week = fetch_current_week(conn)
     results = compute_week_results(conn, week["id"])
     tiebreaker_games = {game["tiebreaker_position"]: game for game in fetch_week_tiebreaker_games(conn, week["id"])}
@@ -1863,6 +1864,21 @@ def render_leaderboard(conn, account):
               <div class="leaderboard-mobile-card__score"><span>Season total</span><strong>{row["total"]}</strong></div>
             </article>'''
         )
+
+    def standings_remainder(table_header, rows, mobile_cards, label):
+        remaining_count = len(rows) - standings_limit
+        if remaining_count <= 0:
+            return ""
+        return f'''<details class="standings-expand">
+          <summary>Show remaining {remaining_count} {label}</summary>
+          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr>{table_header}</tr></thead><tbody>{''.join(rows[standings_limit:])}</tbody></table></div>
+          <div class="leaderboard-mobile-list">{''.join(mobile_cards[standings_limit:])}</div>
+        </details>'''
+
+    weekly_table_header = f"<th>Rank</th><th>Entry</th><th>Weekly points</th>{''.join(f'<th>Tiebreaker {position}</th>' for position in visible_tiebreaker_positions)}"
+    season_table_header = "<th>Rank</th><th>Entry</th><th>Total</th><th>Move</th>"
+    weekly_remainder = standings_remainder(weekly_table_header, weekly_rows, weekly_mobile_cards, "entries")
+    season_remainder = standings_remainder(season_table_header, season_rows, season_mobile_cards, "entries")
     previous_week_recaps = []
     for past_week in weeks:
         if past_week["id"] == week["id"]:
@@ -1885,14 +1901,16 @@ def render_leaderboard(conn, account):
       </section>
       <section class="dashboard-grid">
         <article class="panel">
-          <div class="section-heading"><div><p class="section-label">This week</p><h2>Weekly leaderboard</h2></div><div class="section-heading__actions"><a class="button button--ghost button--small" href="/all-picks">View full pick table</a><span class="badge">Click a name to inspect picks</span></div></div>
-          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th><th>Weekly points</th>{''.join(f'<th>Tiebreaker {position}</th>' for position in visible_tiebreaker_positions)}</tr></thead><tbody>{''.join(weekly_rows)}</tbody></table></div>
-          <div class="leaderboard-mobile-list">{''.join(weekly_mobile_cards)}</div>
+          <div class="section-heading"><div><p class="section-label">This week</p><h2>Weekly leaderboard</h2></div><div class="section-heading__actions"><a class="button button--ghost button--small" href="/all-picks">View full pick table</a></div></div>
+          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr>{weekly_table_header}</tr></thead><tbody>{''.join(weekly_rows[:standings_limit])}</tbody></table></div>
+          <div class="leaderboard-mobile-list">{''.join(weekly_mobile_cards[:standings_limit])}</div>
+          {weekly_remainder}
         </article>
         <article class="panel">
           <div class="section-heading"><div><p class="section-label">Whole season</p><h2>Season standings</h2></div><span class="badge">Auto-totaled</span></div>
-          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr><th>Rank</th><th>Entry</th><th>Total</th><th>Move</th></tr></thead><tbody>{''.join(season_rows)}</tbody></table></div>
-          <div class="leaderboard-mobile-list">{''.join(season_mobile_cards)}</div>
+          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr>{season_table_header}</tr></thead><tbody>{''.join(season_rows[:standings_limit])}</tbody></table></div>
+          <div class="leaderboard-mobile-list">{''.join(season_mobile_cards[:standings_limit])}</div>
+          {season_remainder}
           <div class="season-history"><p class="section-label">Previous weeks</p><h3>Weekly recaps</h3>{history_html}</div>
         </article>
       </section>
