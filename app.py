@@ -1908,7 +1908,7 @@ def render_leaderboard(conn, account):
         </article>
         <article class="panel">
           <div class="section-heading"><div><p class="section-label">Whole season</p><h2>Season standings</h2></div><span class="badge">Auto-totaled</span></div>
-          <div class="leaderboard-desktop-table table-wrap"><table><thead><tr>{season_table_header}</tr></thead><tbody>{''.join(season_rows[:standings_limit])}</tbody></table></div>
+          <div class="leaderboard-desktop-table table-wrap season-standings-table"><table><thead><tr>{season_table_header}</tr></thead><tbody>{''.join(season_rows[:standings_limit])}</tbody></table></div>
           <div class="leaderboard-mobile-list">{''.join(season_mobile_cards[:standings_limit])}</div>
           {season_remainder}
           <div class="season-history"><p class="section-label">Previous weeks</p><h3>Weekly recaps</h3>{history_html}</div>
