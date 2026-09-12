@@ -751,6 +751,29 @@ tbody tr:last-child td {
 .rank-movement--steady { color: var(--muted); font-size: 0.72rem; }
 .rank-movement--new { color: var(--muted); font-size: 0.8rem; }
 
+.season-standings-table table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.season-standings-table th:first-child,
+.season-standings-table td:first-child {
+  width: 24%;
+  white-space: nowrap;
+}
+
+.season-standings-table th:nth-child(2),
+.season-standings-table td:nth-child(2) {
+  width: 56%;
+}
+
+.season-standings-table th:last-child,
+.season-standings-table td:last-child {
+  width: 20%;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .season-history {
   margin-top: 22px;
   padding-top: 20px;
