@@ -780,6 +780,10 @@ tbody tr:last-child td {
   padding: 0 0 12px;
 }
 
+.season-history-week__actions {
+  padding: 0 0 10px;
+}
+
 .season-history-week__list a {
   display: flex;
   justify-content: space-between;
