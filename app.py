@@ -1291,7 +1291,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
             f"<td><strong>{esc(game['away_team'])}</strong> at <strong>{esc(game['home_team'])}</strong></td>"
             f"<td>{esc(game_meta(game))}</td>"
             f"<td>{esc(game['spread_text'])}</td>"
-            f'<td><div class="summary-row"><input form="commissioner-save-form" class="score-input" type="number" min="0" aria-label="{esc(game["away_team"])} final score" name="score_away_{game["id"]}" value="{game["score_away"]}" /><input form="commissioner-save-form" class="score-input" type="number" min="0" aria-label="{esc(game["home_team"])} final score" name="score_home_{game["id"]}" value="{game["score_home"]}" /></div></td>'
+            f'<td><div class="summary-row"><input form="commissioner-save-form" class="score-input" type="number" inputmode="numeric" pattern="[0-9]*" min="0" aria-label="{esc(game["away_team"])} final score" name="score_away_{game["id"]}" value="{game["score_away"]}" /><input form="commissioner-save-form" class="score-input" type="number" inputmode="numeric" pattern="[0-9]*" min="0" aria-label="{esc(game["home_team"])} final score" name="score_home_{game["id"]}" value="{game["score_home"]}" /></div></td>'
             f'''<td><div class="game-row-actions"><a class="button button--ghost button--small" href="/commissioner/game/{game["id"]}/edit">Edit</a>
               <form method="post" action="/commissioner/game/move/{game["id"]}"><button class="button button--ghost button--small" type="submit" name="direction" value="earlier" {"disabled" if game == games[0] else ""}>Up</button></form>
               <form method="post" action="/commissioner/game/move/{game["id"]}"><button class="button button--ghost button--small" type="submit" name="direction" value="later" {"disabled" if game == games[-1] else ""}>Down</button></form>
@@ -1414,7 +1414,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
           <label>Favorite
             <select name="favorite_side"><option value="away">Away team</option><option value="home" selected>Home team</option><option value="none">Pick 'em</option></select>
           </label>
-          <label>Favorite by<input type="number" min="0" step="0.5" name="spread" placeholder="Example: 3.5" /></label>
+          <label>Favorite by<input type="number" inputmode="decimal" min="0" step="0.5" name="spread" placeholder="Example: 3.5" /></label>
           <label>Tiebreaker<select name="tiebreaker_position"><option value="0" selected>Not a tiebreaker</option><option value="1">Tiebreaker 1</option><option value="2">Tiebreaker 2</option><option value="3">Tiebreaker 3</option></select></label>
           <div class="pick-actions"><button class="button button--primary" type="submit">Add Game {next_game_number:02d}</button></div>
         </form>
@@ -1639,7 +1639,7 @@ def render_game_editor(conn, account, game_id):
           </div></fieldset>
           <fieldset class="game-editor-group"><legend>Point spread</legend><div class="game-editor-grid">
             <label>Favorite<select name="favorite_side"><option value="away" {"selected" if favorite_side == "away" else ""}>Away team</option><option value="home" {"selected" if favorite_side == "home" else ""}>Home team</option><option value="none" {"selected" if favorite_side == "none" else ""}>Pick 'em</option></select></label>
-            <label>Favorite by<input type="number" min="0" step="0.5" name="spread" value="{esc(spread_value)}" placeholder="Example: 3.5" /></label>
+            <label>Favorite by<input type="number" inputmode="decimal" min="0" step="0.5" name="spread" value="{esc(spread_value)}" placeholder="Example: 3.5" /></label>
           </div></fieldset>
           <fieldset class="game-editor-group"><legend>Tiebreaker</legend><div class="game-editor-grid">
             <label>Use this game for<select name="tiebreaker_position"><option value="0" {"selected" if not game["tiebreaker_position"] else ""}>Not a tiebreaker</option><option value="1" {"selected" if game["tiebreaker_position"] == 1 else ""}>Tiebreaker 1</option><option value="2" {"selected" if game["tiebreaker_position"] == 2 else ""}>Tiebreaker 2</option><option value="3" {"selected" if game["tiebreaker_position"] == 3 else ""}>Tiebreaker 3</option></select></label>
