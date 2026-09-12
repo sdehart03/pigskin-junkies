@@ -1873,6 +1873,7 @@ def render_leaderboard(conn, account):
         )
         previous_week_recaps.append(
             f'''<details class="season-history-week"><summary>{esc(past_week["label"])} recap</summary>
+              <div class="season-history-week__actions"><a class="button button--ghost button--small" href="/all-picks?week_id={past_week['id']}">View full pick table</a></div>
               <div class="season-history-week__list">{recap_rows}</div>
             </details>'''
         )
@@ -1899,9 +1900,10 @@ def render_leaderboard(conn, account):
     return render_layout("Pigskin Junkies | Leaderboards", body, "/leaderboard", account)
 
 
-def render_all_picks(conn, account):
-    """Show the current card across the field without exposing unstarted picks."""
-    week = fetch_current_week(conn)
+def render_all_picks(conn, account, week_id=None):
+    """Show a weekly card across the field without exposing unstarted picks."""
+    week = fetch_week(conn, week_id) if week_id else None
+    week = week or fetch_current_week(conn)
     games = fetch_week_games(conn, week["id"])
     results = compute_week_results(conn, week["id"])
     pick_rows = []
@@ -2998,7 +3000,7 @@ def app(environ, start_response):
         return html_response(start_response, body)
 
     if path == "/all-picks" and method == "GET":
-        body = render_all_picks(conn, account)
+        body = render_all_picks(conn, account, query.get("week_id", [None])[0])
         conn.close()
         return html_response(start_response, body)
 
