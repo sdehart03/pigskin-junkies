@@ -751,6 +751,54 @@ tbody tr:last-child td {
 .rank-movement--steady { color: var(--muted); font-size: 0.72rem; }
 .rank-movement--new { color: var(--muted); font-size: 0.8rem; }
 
+.pick-tracker-table table {
+  min-width: 2360px;
+}
+
+.pick-tracker-table th,
+.pick-tracker-table td {
+  min-width: 138px;
+}
+
+.pick-tracker-table th:first-child,
+.pick-tracker-table td:first-child {
+  position: sticky;
+  left: 0;
+  min-width: 190px;
+  background: var(--surface);
+  box-shadow: 10px 0 14px rgba(4, 7, 15, 0.2);
+}
+
+.pick-tracker-table th:first-child { z-index: 2; }
+.pick-tracker-table td:first-child { z-index: 1; }
+
+.pick-tracker-table th small,
+.pick-tracker-table td small,
+.pick-tracker__pick span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.pick-tracker__email {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.pick-tracker__email:hover { text-decoration: underline; }
+
+.pick-tracker__pick {
+  min-width: 150px !important;
+  border-left: 1px solid rgba(155, 185, 255, 0.08);
+}
+
+.pick-tracker__pick--submitted { background: rgba(74, 217, 145, 0.07); }
+.pick-tracker__pick--submitted strong { color: var(--success); }
+.pick-tracker__pick--missing { background: rgba(255, 115, 108, 0.07); }
+.pick-tracker__pick--missing strong { color: var(--danger); }
+
 .season-standings-table table {
   min-width: 0;
   table-layout: fixed;
