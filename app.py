@@ -133,6 +133,8 @@ def init_db():
             code TEXT NOT NULL,
             away_team TEXT NOT NULL,
             home_team TEXT NOT NULL,
+            away_rank INTEGER,
+            home_rank INTEGER,
             kickoff TEXT NOT NULL,
             site_note TEXT NOT NULL DEFAULT '',
             spread_text TEXT NOT NULL,
@@ -186,6 +188,10 @@ def ensure_schema(conn):
         conn.execute("ALTER TABLE games ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0")
     if "tiebreaker_position" not in columns:
         conn.execute("ALTER TABLE games ADD COLUMN tiebreaker_position INTEGER NOT NULL DEFAULT 0")
+    if "away_rank" not in columns:
+        conn.execute("ALTER TABLE games ADD COLUMN away_rank INTEGER")
+    if "home_rank" not in columns:
+        conn.execute("ALTER TABLE games ADD COLUMN home_rank INTEGER")
     for week in conn.execute("SELECT DISTINCT week_id FROM games").fetchall():
         unordered = conn.execute(
             "SELECT COUNT(*) AS count FROM games WHERE week_id = ? AND display_order = 0",
@@ -658,6 +664,40 @@ def game_meta(game):
     return " | ".join(part for part in parts if part)
 
 
+def ranked_team_name(game, side):
+    """Return a team name with its optional AP-style poll rank for display."""
+    rank = game[f"{side}_rank"]
+    team = game[f"{side}_team"]
+    return f"#{rank} {team}" if rank else team
+
+
+def matchup_name(game):
+    return f"{ranked_team_name(game, 'away')} at {ranked_team_name(game, 'home')}"
+
+
+def ranked_selection_name(game, selected_team):
+    if selected_team == game["away_team"]:
+        return ranked_team_name(game, "away")
+    if selected_team == game["home_team"]:
+        return ranked_team_name(game, "home")
+    return selected_team or ""
+
+
+def poll_rank_options(selected_rank=None):
+    return '<option value="">Unranked</option>' + "".join(
+        f'<option value="{rank}" {"selected" if rank == selected_rank else ""}>#{rank}</option>'
+        for rank in range(1, 26)
+    )
+
+
+def poll_rank_from_form(form, field_name):
+    try:
+        rank = int((form.get(field_name) or "").strip())
+    except ValueError:
+        return None
+    return rank if 1 <= rank <= 25 else None
+
+
 def line_values(spread_text, away_team, home_team):
     if spread_text == "Pick 'em":
         return "none", ""
@@ -1029,7 +1069,7 @@ def render_home(conn, account):
     open_games = [game for game in games if not is_game_locked(game)]
     next_game = open_games[0] if open_games else None
     next_lock = game_lock_label(next_game) if next_game else "All games are locked"
-    next_matchup = f"{next_game['away_team']} at {next_game['home_team']}" if next_game else "The weekly card is complete"
+    next_matchup = matchup_name(next_game) if next_game else "The weekly card is complete"
     headline = f"{week['label']} is ready." if open_games else f"{week['label']} is underway."
     top_three = "".join(
         f'<a class="leader-card" href="/player?entry_id={item["entry_id"]}&week_id={week["id"]}"><strong>#{item["rank"]} {esc(item["display_name"])}</strong><span>{item["wins"]}/{item["total_games"]} correct</span></a>'
@@ -1231,7 +1271,7 @@ def render_delete_game_confirmation(account, game):
           <p class="section-label">Confirmation required</p>
           <h2>This action cannot be undone</h2>
           <div class="alert alert--error">Deleting this game permanently removes every participant pick made for it. The remaining games will be renumbered automatically.</div>
-          <div class="summary-card"><strong>{esc(game["away_team"])} at {esc(game["home_team"])}</strong><span>{esc(game_meta(game))}</span></div>
+          <div class="summary-card"><strong>{esc(matchup_name(game))}</strong><span>{esc(game_meta(game))}</span></div>
           <form class="pick-actions" method="post" action="/commissioner/game/delete/{game["id"]}">
             <input type="hidden" name="confirm_delete" value="yes" />
             <button class="button button--danger" type="submit">Yes, permanently delete this game</button>
@@ -1288,7 +1328,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
         game_rows.append(
             "<tr>"
             f"<td>{esc(game['code'])}</td>"
-            f"<td><strong>{esc(game['away_team'])}</strong> at <strong>{esc(game['home_team'])}</strong></td>"
+            f"<td><strong>{esc(ranked_team_name(game, 'away'))}</strong> at <strong>{esc(ranked_team_name(game, 'home'))}</strong></td>"
             f"<td>{esc(game_meta(game))}</td>"
             f"<td>{esc(game['spread_text'])}</td>"
             f'<td><div class="summary-row"><input form="commissioner-save-form" class="score-input" type="number" inputmode="numeric" pattern="[0-9]*" min="0" onfocus="if (this.value === \'0\') this.select()" aria-label="{esc(game["away_team"])} final score" name="score_away_{game["id"]}" value="{game["score_away"]}" /><input form="commissioner-save-form" class="score-input" type="number" inputmode="numeric" pattern="[0-9]*" min="0" onfocus="if (this.value === \'0\') this.select()" aria-label="{esc(game["home_team"])} final score" name="score_home_{game["id"]}" value="{game["score_home"]}" /></div></td>'
@@ -1408,7 +1448,9 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
         <form class="form-card game-builder-grid" method="post" action="/commissioner/game/add">
           <input type="hidden" name="week_id" value="{week['id']}" />
           <label>Away team<input list="ncaa-team-options" name="away_team" placeholder="Start typing a team" required /></label>
+          <label>Away rank<select name="away_rank">{poll_rank_options()}</select></label>
           <label>Home team<input list="ncaa-team-options" name="home_team" placeholder="Start typing a team" required /></label>
+          <label>Home rank<select name="home_rank">{poll_rank_options()}</select></label>
           <label>Kickoff<input type="datetime-local" name="kickoff" required /></label>
           <label>Location or note<input type="text" name="site_note" placeholder="Example: Atlanta, GA or neutral site" /></label>
           <label>Favorite
@@ -1579,7 +1621,7 @@ def render_commissioner_pick_tracker(conn, account, week_id=None):
             selections.setdefault(pick_ids[item["pick_id"]], {})[item["game_id"]] = item["selected_team"]
 
     tracker_headers = "".join(
-        f'<th><strong>{esc(game["code"])}</strong><small>{esc(game["away_team"])} at {esc(game["home_team"])}</small></th>'
+        f'<th><strong>{esc(game["code"])}</strong><small>{esc(matchup_name(game))}</small></th>'
         for game in games
     )
     tracker_rows = []
@@ -1634,21 +1676,21 @@ def render_commissioner_picks(conn, account, week_id=None, entry_id=None, messag
     cards = []
     for game in games:
         options = "".join(
-            f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {"checked" if selections.get(game["id"]) == team else ""} /><span>{esc(team)}</span></label>'
-            for team in (game["away_team"], game["home_team"])
+            f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {"checked" if selections.get(game["id"]) == team else ""} /><span>{esc(ranked_team_name(game, side))}</span></label>'
+            for side, team in (("away", game["away_team"]), ("home", game["home_team"]))
         )
         tiebreaker_field = (
             f'<label class="tiebreaker-game-field">Tiebreaker {game["tiebreaker_position"]}: total points<input type="number" min="0" name="tb_{game["tiebreaker_position"]}" value="{esc(tiebreaker_value(pick, game["tiebreaker_position"]))}" /></label>'
             if game["tiebreaker_position"] else ""
         )
         cards.append(
-            f'<fieldset class="pick-game-card"><legend>{esc(game["code"])}: {esc(game["away_team"])} at {esc(game["home_team"])}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{options}</div>{tiebreaker_field}</fieldset>'
+            f'<fieldset class="pick-game-card"><legend>{esc(game["code"])}: {esc(matchup_name(game))}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{options}</div>{tiebreaker_field}</fieldset>'
         )
     notice = f'<div class="alert alert--success">{esc(message)}</div>' if message else ""
     body = f"""
       <section class="page-hero"><div><p class="eyebrow">Commissioner workspace</p><h1>Manage participant picks</h1><p class="hero__lede">Enter missing picks, correct reported mistakes, or post picks received by phone.</p></div><span class="badge">Commissioner override</span></section>
       <nav class="commissioner-workspace-nav" aria-label="Commissioner workspaces">
-        <a class="button button--ghost button--small" href="/commissioner">Overview</a><a class="button button--ghost button--small" href="/commissioner/weekly">Weekly setup</a><a class="button button--primary button--small" href="/commissioner/picks">Manage picks</a><a class="button button--ghost button--small" href="/commissioner/participants">Participants</a><a class="button button--ghost button--small" href="/commissioner/weeks">Weeks</a>
+        <a class="button button--ghost button--small" href="/commissioner">Overview</a><a class="button button--ghost button--small" href="/commissioner/weekly">Weekly setup</a><a class="button button--primary button--small" href="/commissioner/picks">Manage picks</a><a class="button button--ghost button--small" href="/commissioner/tracker">Pick tracker</a><a class="button button--ghost button--small" href="/commissioner/participants">Participants</a><a class="button button--ghost button--small" href="/commissioner/weeks">Weeks</a>
       </nav>
       <form class="week-switcher" method="get" action="/commissioner/picks">
         <label>Week<select name="week_id">{''.join(f'<option value="{listed_week["id"]}" {"selected" if listed_week["id"] == week["id"] else ""}>{esc(listed_week["label"])}</option>' for listed_week in fetch_all_weeks(conn))}</select></label>
@@ -1697,13 +1739,15 @@ def render_game_editor(conn, account, game_id):
         <a class="button button--ghost" href="/commissioner/weekly?week_id={game['week_id']}">Back to weekly setup</a>
       </section>
       <section class="panel game-editor-panel">
-        <div class="game-editor-matchup"><span class="game-editor-matchup__team">{esc(game['away_team'])}</span><span class="game-editor-matchup__at">at</span><span class="game-editor-matchup__team">{esc(game['home_team'])}</span></div>
+        <div class="game-editor-matchup"><span class="game-editor-matchup__team">{esc(ranked_team_name(game, 'away'))}</span><span class="game-editor-matchup__at">at</span><span class="game-editor-matchup__team">{esc(ranked_team_name(game, 'home'))}</span></div>
         <div class="game-editor-meta"><span>{esc(game_meta(game))}</span><span>Game locks one minute before kickoff.</span></div>
         {team_datalist}
         <form class="game-editor-form" method="post" action="/commissioner/game/update/{game['id']}">
           <fieldset class="game-editor-group"><legend>Matchup</legend><div class="game-editor-grid game-editor-grid--teams">
             <label>Away team<input list="ncaa-team-options" name="away_team" value="{esc(game['away_team'])}" required /></label>
+            <label>Away rank<select name="away_rank">{poll_rank_options(game['away_rank'])}</select></label>
             <label>Home team<input list="ncaa-team-options" name="home_team" value="{esc(game['home_team'])}" required /></label>
+            <label>Home rank<select name="home_rank">{poll_rank_options(game['home_rank'])}</select></label>
           </div></fieldset>
           <fieldset class="game-editor-group"><legend>Kickoff and location</legend><div class="game-editor-grid">
             <label>Kickoff<input type="datetime-local" name="kickoff" value="{esc(kickoff_value)}" required /></label>
@@ -1784,16 +1828,16 @@ def render_picks(conn, account, message="", active_entry_id=None):
         if game_locked:
             locked_pick = selections.get(game["id"])
             options.append(
-                f'<div class="pick-lock-notice"><strong>{esc(locked_pick) if locked_pick else "No pick submitted"}</strong><span>This game locked at {esc(game_lock_label(game))}.</span></div>'
+                f'<div class="pick-lock-notice"><strong>{esc(ranked_selection_name(game, locked_pick)) if locked_pick else "No pick submitted"}</strong><span>This game locked at {esc(game_lock_label(game))}.</span></div>'
             )
         else:
-            for team in (game["away_team"], game["home_team"]):
+            for side, team in (("away", game["away_team"]), ("home", game["home_team"])):
                 checked = "checked" if selections.get(game["id"]) == team else ""
                 options.append(
-                    f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {checked} /><span>{esc(team)}</span></label>'
+                    f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {checked} /><span>{esc(ranked_team_name(game, side))}</span></label>'
                 )
         cards.append(
-            f'<fieldset class="pick-game-card {"pick-game-card--locked" if game_locked else ""}"><legend>{esc(game["code"])}: {esc(game["away_team"])} at {esc(game["home_team"])}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{"".join(options)}</div>{tiebreaker_field}</fieldset>'
+            f'<fieldset class="pick-game-card {"pick-game-card--locked" if game_locked else ""}"><legend>{esc(game["code"])}: {esc(matchup_name(game))}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{"".join(options)}</div>{tiebreaker_field}</fieldset>'
         )
     entry_select = ""
     if len(entries) > 1:
@@ -2022,7 +2066,7 @@ def render_all_picks(conn, account, week_id=None):
             + f"<td><strong>{result['wins']}/{result['total_games']}</strong></td></tr>"
         )
     game_headers = "".join(
-        f'<th><span>{esc(game["code"])}</span><small>{esc(game["away_team"])} at {esc(game["home_team"])}</small></th>'
+        f'<th><span>{esc(game["code"])}</span><small>{esc(matchup_name(game))}</small></th>'
         for game in games
     )
     body = f"""
@@ -2063,7 +2107,7 @@ def render_trends(conn, account):
             cards.append(
                 f'''<article class="breakdown-card breakdown-card--hidden">
                   <strong>{esc(game["code"])}</strong>
-                  <span>{esc(game["away_team"])} at {esc(game["home_team"])}</span>
+                  <span>{esc(matchup_name(game))}</span>
                   <div class="pick-game-card__meta">{esc(game_meta(game))}</div>
                   <div class="pick-lock-notice"><strong>Pick trends unlock at kickoff</strong><span>Selections stay private until this game begins.</span></div>
                 </article>'''
@@ -2079,7 +2123,7 @@ def render_trends(conn, account):
             f"""
             <article class="breakdown-card">
               <strong>{esc(game["code"])}</strong>
-              <span>{esc(game["away_team"])} at {esc(game["home_team"])}</span>
+              <span>{esc(matchup_name(game))}</span>
               <div class="pick-game-card__meta">{esc(game_meta(game))}</div>
               <div class="trend-scale">
                 <span>{away_count}</span>
@@ -2089,7 +2133,7 @@ def render_trends(conn, account):
                 </div>
                 <span>{home_count}</span>
               </div>
-              <div class="trend-labels"><span>{esc(game["away_team"])}</span><span>{esc(game["home_team"])}</span></div>
+              <div class="trend-labels"><span>{esc(ranked_team_name(game, "away"))}</span><span>{esc(ranked_team_name(game, "home"))}</span></div>
               <span class="winner-tag">Winner: {esc(game["winner"] or "TBD")}</span>
             </article>
             """
@@ -2129,7 +2173,7 @@ def render_player(conn, account, entry_id, week_id):
         rows.append(
             "<tr>"
             f"<td>{esc(game['code'])}</td>"
-            f"<td>{esc(game['away_team'])} at {esc(game['home_team'])}<div class=\"helper-copy\">{esc(game_meta(game))}</div></td>"
+            f"<td>{esc(matchup_name(game))}<div class=\"helper-copy\">{esc(game_meta(game))}</div></td>"
             f"<td>{esc(selected)}</td>"
             f"<td>{esc(winner or 'TBD')}</td>"
             f'<td class="status {status_class}">{status}</td>'
@@ -2138,7 +2182,7 @@ def render_player(conn, account, entry_id, week_id):
         mobile_rows.append(
             f'''<article class="player-pick-card">
               <div class="player-pick-card__heading"><strong>{esc(game["code"])}</strong><span class="status {status_class}">{status}</span></div>
-              <strong>{esc(game["away_team"])} at {esc(game["home_team"])}</strong>
+              <strong>{esc(matchup_name(game))}</strong>
               <span class="helper-copy">{esc(game_meta(game))}</span>
               <div class="player-pick-card__details"><span><small>Pick</small>{esc(selected)}</span><span><small>ATS winner</small>{esc(winner or "TBD")}</span></div>
             </article>'''
@@ -2150,7 +2194,7 @@ def render_player(conn, account, entry_id, week_id):
             continue
         value = tiebreaker_value(pick, position) if has_game_started(game) else "Hidden until kickoff"
         tiebreaker_cards.append(
-            f'<div class="summary-card"><strong>Tiebreaker {position}: {esc(game["away_team"])} at {esc(game["home_team"])}</strong><span>{esc(value or "-")}</span></div>'
+            f'<div class="summary-card"><strong>Tiebreaker {position}: {esc(matchup_name(game))}</strong><span>{esc(value or "-")}</span></div>'
         )
     body = f"""
       <section class="page-hero">
@@ -2422,6 +2466,8 @@ def add_game(conn, form):
     week = form_week(conn, form)
     away_team = (form.get("away_team") or "").strip()
     home_team = (form.get("home_team") or "").strip()
+    away_rank = poll_rank_from_form(form, "away_rank")
+    home_rank = poll_rank_from_form(form, "home_rank")
     kickoff = (form.get("kickoff") or "").strip()
     site_note = (form.get("site_note") or "").strip()
     favorite_side = form.get("favorite_side") or "none"
@@ -2443,10 +2489,10 @@ def add_game(conn, form):
     game_count = conn.execute("SELECT COUNT(*) AS count FROM games WHERE week_id = ?", (week["id"],)).fetchone()["count"]
     game_id = conn.execute(
         """
-        INSERT INTO games (week_id, code, away_team, home_team, kickoff, site_note, spread_text, display_order, winner, score_away, score_home)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, 0)
+        INSERT INTO games (week_id, code, away_team, home_team, away_rank, home_rank, kickoff, site_note, spread_text, display_order, winner, score_away, score_home)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, 0)
         """,
-        (week["id"], f"Game {game_count + 1:02d}", away_team, home_team, kickoff, site_note, spread_text, game_count + 1),
+        (week["id"], f"Game {game_count + 1:02d}", away_team, home_team, away_rank, home_rank, kickoff, site_note, spread_text, game_count + 1),
     ).lastrowid
     set_game_tiebreaker_position(conn, week["id"], game_id, tiebreaker_position)
     conn.commit()
@@ -2457,6 +2503,8 @@ def update_game(conn, form, game_id):
     game = conn.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
     away_team = (form.get("away_team") or "").strip()
     home_team = (form.get("home_team") or "").strip()
+    away_rank = poll_rank_from_form(form, "away_rank")
+    home_rank = poll_rank_from_form(form, "home_rank")
     kickoff = (form.get("kickoff") or "").strip()
     site_note = (form.get("site_note") or "").strip()
     favorite_side = form.get("favorite_side") or "none"
@@ -2471,8 +2519,8 @@ def update_game(conn, form, game_id):
     favorite = away_team if favorite_side == "away" else home_team if favorite_side == "home" else ""
     spread_text = f"{favorite} -{spread:g}" if favorite and spread else "Pick 'em"
     conn.execute(
-        "UPDATE games SET away_team = ?, home_team = ?, kickoff = ?, site_note = ?, spread_text = ? WHERE id = ?",
-        (away_team, home_team, kickoff, site_note, spread_text, game_id),
+        "UPDATE games SET away_team = ?, home_team = ?, away_rank = ?, home_rank = ?, kickoff = ?, site_note = ?, spread_text = ? WHERE id = ?",
+        (away_team, home_team, away_rank, home_rank, kickoff, site_note, spread_text, game_id),
     )
     set_game_tiebreaker_position(conn, game["week_id"], game_id, tiebreaker_position)
     ordered_game_ids = [listed_game["id"] for listed_game in fetch_week_games(conn, game["week_id"])]
