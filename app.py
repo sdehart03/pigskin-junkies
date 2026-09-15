@@ -1498,6 +1498,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
         <a class="button button--ghost button--small" href="/commissioner">Overview</a>
         <a class="button button--ghost button--small" href="/commissioner/weekly">Weekly setup</a>
         <a class="button button--ghost button--small" href="/commissioner/picks">Manage picks</a>
+        <a class="button button--ghost button--small" href="/commissioner/tracker">Pick tracker</a>
         <a class="button button--ghost button--small" href="/commissioner/participants">Participants</a>
         <a class="button button--ghost button--small" href="/commissioner/weeks">Weeks</a>
       </nav>
@@ -1523,6 +1524,8 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
           <section class="page-hero"><div><p class="eyebrow">Commissioner workspace</p><h1>Participants and entries</h1></div><div class="page-hero__actions"><span class="pill">{len(accounts_with_entries)} accounts</span></div></section>
           {workspace_nav}{participants_section}
         """
+    elif section == "tracker":
+        return render_commissioner_pick_tracker(conn, account, week_id), None
     elif section == "weeks":
         body = f"""
           <section class="page-hero"><div><p class="eyebrow">Commissioner workspace</p><h1>Contest weeks</h1></div><div class="page-hero__actions"><span class="pill">{len(weeks)} weeks configured</span></div></section>
@@ -1540,11 +1543,80 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
       <section class="commissioner-hub">
         <a class="commissioner-hub__card" href="/commissioner/weekly"><p class="section-label">Weekly setup</p><h2>{esc(week['label'])}</h2><span>Update lock time, tiebreakers, game results, and follow up on missing picks.</span><strong>Open weekly setup</strong></a>
         <a class="commissioner-hub__card" href="/commissioner/picks"><p class="section-label">Manage picks</p><h2>{submitted_count} submitted</h2><span>Enter missing selections, make corrections, and post picks received from participants.</span><strong>Manage participant picks</strong></a>
+        <a class="commissioner-hub__card" href="/commissioner/tracker"><p class="section-label">Pick tracker</p><h2>View all picks</h2><span>Scan every entry by game and quickly identify who still needs a reminder.</span><strong>Open pick tracker</strong></a>
         <a class="commissioner-hub__card" href="/commissioner/participants"><p class="section-label">Participants</p><h2>{len(accounts_with_entries)} accounts</h2><span>Create, update, and organize participant accounts and their entries.</span><strong>Manage participants</strong></a>
         <a class="commissioner-hub__card" href="/commissioner/weeks"><p class="section-label">Weeks</p><h2>{len(weeks)} configured</h2><span>Switch the active contest week or create the next one when ready.</span><strong>Manage weeks</strong></a>
       </section>
     """
     return render_layout("Pigskin Junkies | Commissioner", body, "/commissioner", account), None
+
+
+def render_commissioner_pick_tracker(conn, account, week_id=None):
+    """Show commissioners a complete, private matrix of picks for reminder follow-up."""
+    week = fetch_week(conn, week_id) or fetch_current_week(conn)
+    games = fetch_week_games(conn, week["id"])
+    entries = conn.execute(
+        """
+        SELECT e.id, e.display_name, a.name AS account_name, a.email
+        FROM entries e
+        JOIN accounts a ON a.id = e.account_id
+        ORDER BY e.display_name COLLATE NOCASE, e.id
+        """
+    ).fetchall()
+    pick_rows = conn.execute(
+        "SELECT id, entry_id FROM picks WHERE week_id = ?",
+        (week["id"],),
+    ).fetchall()
+    pick_ids = {row["id"]: row["entry_id"] for row in pick_rows}
+    selections = {}
+    if pick_ids:
+        placeholders = ", ".join("?" for _ in pick_ids)
+        item_rows = conn.execute(
+            f"SELECT pick_id, game_id, selected_team FROM pick_items WHERE pick_id IN ({placeholders})",
+            tuple(pick_ids),
+        ).fetchall()
+        for item in item_rows:
+            selections.setdefault(pick_ids[item["pick_id"]], {})[item["game_id"]] = item["selected_team"]
+
+    tracker_headers = "".join(
+        f'<th><strong>{esc(game["code"])}</strong><small>{esc(game["away_team"])} at {esc(game["home_team"])}</small></th>'
+        for game in games
+    )
+    tracker_rows = []
+    for entry in entries:
+        entry_selections = selections.get(entry["id"], {})
+        picked_count = len(entry_selections)
+        pick_cells = "".join(
+            f'<td class="pick-tracker__pick pick-tracker__pick--submitted" title="Picked {esc(entry_selections[game["id"]])}"><strong>{esc(entry_selections[game["id"]])}</strong><span>Picked</span></td>'
+            if game["id"] in entry_selections else
+            '<td class="pick-tracker__pick pick-tracker__pick--missing"><strong>Missing</strong><span>No pick</span></td>'
+            for game in games
+        )
+        tracker_rows.append(
+            f'''<tr>
+              <td><strong>{esc(entry["display_name"])}</strong><small>{esc(entry["account_name"])}</small></td>
+              <td><a class="pick-tracker__email" href="mailto:{esc(entry["email"])}">{esc(entry["email"])}</a></td>
+              <td><strong>{picked_count}/{len(games)}</strong></td>
+              {pick_cells}
+            </tr>'''
+        )
+    missing_entries = sum(1 for entry in entries if len(selections.get(entry["id"], {})) < len(games))
+    body = f"""
+      <section class="page-hero"><div><p class="eyebrow">Commissioner workspace</p><h1>Pick tracker</h1><p class="hero__lede">Private commissioner view of every entry, every game, and the picks still missing.</p></div><div class="page-hero__actions"><span class="pill">{len(entries)} entries</span><span class="pill pill--accent">{missing_entries} need follow-up</span></div></section>
+      <nav class="commissioner-workspace-nav" aria-label="Commissioner workspaces">
+        <a class="button button--ghost button--small" href="/commissioner">Overview</a><a class="button button--ghost button--small" href="/commissioner/weekly">Weekly setup</a><a class="button button--ghost button--small" href="/commissioner/picks">Manage picks</a><a class="button button--primary button--small" href="/commissioner/tracker">Pick tracker</a><a class="button button--ghost button--small" href="/commissioner/participants">Participants</a><a class="button button--ghost button--small" href="/commissioner/weeks">Weeks</a>
+      </nav>
+      <form class="week-switcher" method="get" action="/commissioner/tracker">
+        <label>Week<select name="week_id">{''.join(f'<option value="{listed_week["id"]}" {"selected" if listed_week["id"] == week["id"] else ""}>{esc(listed_week["label"])}</option>' for listed_week in fetch_all_weeks(conn))}</select></label>
+        <button class="button button--primary button--small" type="submit">Open week</button>
+        <span>Swipe or scroll the table to review every game. Missing picks are highlighted in red.</span>
+      </form>
+      <section class="panel">
+        <div class="section-heading"><div><p class="section-label">{esc(week["label"])}</p><h2>All participant picks</h2></div><span class="badge">Commissioners only</span></div>
+        <div class="table-wrap pick-tracker-table"><table><thead><tr><th>Entry</th><th>Email</th><th>Picked</th>{tracker_headers}</tr></thead><tbody>{''.join(tracker_rows)}</tbody></table></div>
+      </section>
+    """
+    return render_layout("Pigskin Junkies | Pick Tracker", body, "/commissioner", account)
 
 
 def render_commissioner_picks(conn, account, week_id=None, entry_id=None, message=""):
@@ -2752,7 +2824,7 @@ def app(environ, start_response):
         conn.close()
         return html_response(start_response, body)
 
-    if path in {"/commissioner/weekly", "/commissioner/participants", "/commissioner/weeks"} and method == "GET":
+    if path in {"/commissioner/weekly", "/commissioner/tracker", "/commissioner/participants", "/commissioner/weeks"} and method == "GET":
         if not account:
             conn.close()
             return redirect(start_response, "/login?next=commissioner")
