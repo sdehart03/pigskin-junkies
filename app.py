@@ -726,7 +726,7 @@ def default_underdog_pick(game):
 
 
 def effective_pick(game, selections):
-    """Use a submitted pick when present; otherwise default a started game at kickoff."""
+    """Use a submitted pick when present; otherwise default a started spread game to its underdog."""
     selected_team = selections.get(game["id"])
     if selected_team:
         return selected_team, False
@@ -914,8 +914,8 @@ def compute_week_results(conn, week_id):
     for entry in entries:
         pick = picks_by_entry.get(entry["id"])
         entry_selections = selections.get(entry["id"], {})
-        # Score submitted selections or the automatic default once a game
-        # starts. Completion remains based only on participant submissions.
+        # Score submitted selections or the automatic underdog default once a
+        # game starts. Completion remains based only on participant submissions.
         wins = 0
         for game in games:
             selected_team, _ = effective_pick(game, entry_selections)
@@ -985,7 +985,9 @@ def compute_season_results(conn, through_week_id=None):
                         row["tiebreaker_gaps"][index] += gap
             row["weekly"].append({"label": week["label"], "wins": wins})
         standings.append(row)
-    return rank_results(standings, lambda item: (-item["total"], *item["tiebreaker_gaps"]))
+    # Season standings use competition ranking by total points only: tied
+    # entries share a place, and the next place accounts for every entry ahead.
+    return rank_results(standings, lambda item: (-item["total"],))
 
 
 def compute_previous_season_rank(conn, current_week_id, entry_id):
