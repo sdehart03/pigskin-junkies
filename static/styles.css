@@ -796,6 +796,8 @@ tbody tr:last-child td {
 
 .pick-tracker__pick--submitted { background: rgba(74, 217, 145, 0.07); }
 .pick-tracker__pick--submitted strong { color: var(--success); }
+.pick-tracker__pick--default { background: rgba(245, 207, 102, 0.08); }
+.pick-tracker__pick--default strong { color: #f5cf66; }
 .pick-tracker__pick--missing { background: rgba(255, 115, 108, 0.07); }
 .pick-tracker__pick--missing strong { color: var(--danger); }
 
