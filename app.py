@@ -992,13 +992,22 @@ def compute_previous_rank(conn, current_week_id, entry_id):
     return match["rank"] if match else None
 
 
-def compute_season_results(conn, through_week_id=None):
+def compute_season_results(conn, through_week_id=None, weekly_results_by_week=None):
     if through_week_id is None:
         weeks = conn.execute("SELECT * FROM weeks ORDER BY id").fetchall()
     else:
         weeks = conn.execute("SELECT * FROM weeks WHERE id <= ? ORDER BY id", (through_week_id,)).fetchall()
     entries = fetch_all_entries(conn)
-    per_week = {week["id"]: compute_week_results(conn, week["id"]) for week in weeks}
+    per_week = {}
+    for week in weeks:
+        if weekly_results_by_week and week["id"] in weekly_results_by_week:
+            per_week[week["id"]] = weekly_results_by_week[week["id"]]
+        else:
+            per_week[week["id"]] = compute_week_results(conn, week["id"])
+    per_week_by_entry = {
+        week_id: {result["entry_id"]: result for result in week_results}
+        for week_id, week_results in per_week.items()
+    }
     standings = []
     for entry in entries:
         row = {
@@ -1009,7 +1018,7 @@ def compute_season_results(conn, through_week_id=None):
             "tiebreaker_gaps": [0, 0, 0],
         }
         for week in weeks:
-            result = next((item for item in per_week[week["id"]] if item["entry_id"] == entry["id"]), None)
+            result = per_week_by_entry[week["id"]].get(entry["id"])
             wins = result["wins"] if result and result["submitted"] else None
             if wins is not None:
                 row["total"] += wins
@@ -1999,13 +2008,22 @@ def render_leaderboard(conn, account):
     standings_limit = 10
     week = fetch_current_week(conn)
     results = compute_week_results(conn, week["id"])
+    weeks = conn.execute("SELECT * FROM weeks ORDER BY id").fetchall()
+    weekly_results_by_week = {week["id"]: results}
+    for listed_week in weeks:
+        if listed_week["id"] != week["id"]:
+            weekly_results_by_week[listed_week["id"]] = compute_week_results(conn, listed_week["id"])
     tiebreaker_games = {game["tiebreaker_position"]: game for game in fetch_week_tiebreaker_games(conn, week["id"])}
     visible_tiebreaker_positions = [
         position for position in range(1, 4)
         if tiebreaker_games.get(position) and has_game_started(tiebreaker_games[position])
     ]
-    season = compute_season_results(conn)
-    weeks = conn.execute("SELECT * FROM weeks ORDER BY id").fetchall()
+    season = compute_season_results(conn, weekly_results_by_week=weekly_results_by_week)
+    previous_week = next((listed_week for listed_week in reversed(weeks) if listed_week["id"] < week["id"]), None)
+    previous_ranks = {
+        row["entry_id"]: row["rank"]
+        for row in compute_season_results(conn, previous_week["id"], weekly_results_by_week)
+    } if previous_week else {}
     weekly_rows = []
     weekly_mobile_cards = []
     for item in results:
@@ -2031,7 +2049,7 @@ def render_leaderboard(conn, account):
     season_rows = []
     season_mobile_cards = []
     for row in season:
-        previous_rank = compute_previous_season_rank(conn, week["id"], row["entry_id"])
+        previous_rank = previous_ranks.get(row["entry_id"])
         movement_icon, movement_class, movement_label = season_rank_movement(row["rank"], previous_rank)
         movement_html = f'<span class="rank-movement {movement_class}" title="{movement_label}" aria-label="{movement_label}">{movement_icon}</span>'
         season_rows.append(
@@ -2067,7 +2085,7 @@ def render_leaderboard(conn, account):
             continue
         recap_rows = "".join(
             f'<a href="/player?entry_id={item["entry_id"]}&week_id={past_week["id"]}"><span>#{item["rank"]} {esc(item["display_name"])}</span><strong>{item["wins"]}/{item["total_games"]}</strong></a>'
-            for item in compute_week_results(conn, past_week["id"])
+            for item in weekly_results_by_week[past_week["id"]]
         )
         previous_week_recaps.append(
             f'''<details class="season-history-week"><summary>{esc(past_week["label"])} recap</summary>
