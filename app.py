@@ -675,6 +675,11 @@ def matchup_name(game):
     return f"{ranked_team_name(game, 'away')} at {ranked_team_name(game, 'home')}"
 
 
+def matchup_with_spread(game):
+    """Keep the full-field table's matchup and line together in each game header."""
+    return f"{matchup_name(game)} | {game['spread_text']}"
+
+
 def pick_option_name(game, side):
     """Show the spread on the favorite's actual pick button."""
     favorite_side, spread = line_values(game["spread_text"], game["away_team"], game["home_team"])
@@ -2117,7 +2122,7 @@ def render_all_picks(conn, account, week_id=None):
             + f"<td><strong>{result['wins']}/{result['total_games']}</strong></td></tr>"
         )
     game_headers = "".join(
-        f'<th><span>{esc(game["code"])}</span><small>{esc(matchup_name(game))}</small></th>'
+        f'<th><span>{esc(game["code"])}</span><small>{esc(matchup_with_spread(game))}</small></th>'
         for game in games
     )
     body = f"""
