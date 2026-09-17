@@ -539,8 +539,11 @@ thead th,
   min-width: 1700px !important;
 }
 
-.full-picks-table th {
-  min-width: 8.5rem;
+.full-picks-table th:nth-child(n + 3):not(:last-child),
+.full-picks-table td:nth-child(n + 3):not(:last-child) {
+  width: 9.25rem;
+  min-width: 9.25rem;
+  max-width: 9.25rem;
   white-space: normal;
 }
 
@@ -564,8 +567,18 @@ thead th,
   display: block;
   margin-top: 4px;
   color: var(--muted);
+  font-size: 0.76rem;
   font-weight: 500;
   line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.full-picks-table__line {
+  display: block;
+  margin-top: 3px;
+  color: var(--accent);
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .pick-result--correct {
