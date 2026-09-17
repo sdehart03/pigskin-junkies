@@ -675,18 +675,11 @@ def matchup_name(game):
     return f"{ranked_team_name(game, 'away')} at {ranked_team_name(game, 'home')}"
 
 
-def pick_card_matchup_name(game):
-    """Show a game's line beside its favored team for quicker pick-card scanning."""
+def pick_option_name(game, side):
+    """Show the spread on the favorite's actual pick button."""
     favorite_side, spread = line_values(game["spread_text"], game["away_team"], game["home_team"])
-    away_name = ranked_team_name(game, "away")
-    home_name = ranked_team_name(game, "home")
-    if favorite_side == "away":
-        away_name = f"{away_name} -{spread}"
-    elif favorite_side == "home":
-        home_name = f"{home_name} -{spread}"
-    elif game["spread_text"] == "Pick 'em":
-        home_name = f"{home_name} (Pick 'em)"
-    return f"{away_name} at {home_name}"
+    team_name = ranked_team_name(game, side)
+    return f"{team_name} -{spread}" if side == favorite_side else team_name
 
 
 def pick_card_meta(game):
@@ -1725,7 +1718,7 @@ def render_commissioner_picks(conn, account, week_id=None, entry_id=None, messag
     cards = []
     for game in games:
         options = "".join(
-            f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {"checked" if selections.get(game["id"]) == team else ""} /><span>{esc(ranked_team_name(game, side))}</span></label>'
+            f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {"checked" if selections.get(game["id"]) == team else ""} /><span>{esc(pick_option_name(game, side))}</span></label>'
             for side, team in (("away", game["away_team"]), ("home", game["home_team"]))
         )
         tiebreaker_field = (
@@ -1733,7 +1726,7 @@ def render_commissioner_picks(conn, account, week_id=None, entry_id=None, messag
             if game["tiebreaker_position"] else ""
         )
         cards.append(
-            f'<fieldset class="pick-game-card"><legend>{esc(game["code"])}: {esc(pick_card_matchup_name(game))}</legend><div class="pick-game-card__meta">{esc(pick_card_meta(game))}</div><div class="pick-options">{options}</div>{tiebreaker_field}</fieldset>'
+            f'<fieldset class="pick-game-card"><legend>{esc(game["code"])}: {esc(matchup_name(game))}</legend><div class="pick-game-card__meta">{esc(pick_card_meta(game))}</div><div class="pick-options">{options}</div>{tiebreaker_field}</fieldset>'
         )
     notice = f'<div class="alert alert--success">{esc(message)}</div>' if message else ""
     body = f"""
@@ -1889,10 +1882,10 @@ def render_picks(conn, account, message="", active_entry_id=None):
             for side, team in (("away", game["away_team"]), ("home", game["home_team"])):
                 checked = "checked" if selections.get(game["id"]) == team else ""
                 options.append(
-                    f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {checked} /><span>{esc(ranked_team_name(game, side))}</span></label>'
+                    f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {checked} /><span>{esc(pick_option_name(game, side))}</span></label>'
                 )
         cards.append(
-            f'<fieldset class="pick-game-card {"pick-game-card--locked" if game_locked else ""}"><legend>{esc(game["code"])}: {esc(pick_card_matchup_name(game))}</legend><div class="pick-game-card__meta">{esc(pick_card_meta(game))}</div><div class="pick-options">{"".join(options)}</div>{tiebreaker_field}</fieldset>'
+            f'<fieldset class="pick-game-card {"pick-game-card--locked" if game_locked else ""}"><legend>{esc(game["code"])}: {esc(matchup_name(game))}</legend><div class="pick-game-card__meta">{esc(pick_card_meta(game))}</div><div class="pick-options">{"".join(options)}</div>{tiebreaker_field}</fieldset>'
         )
     entry_select = ""
     if len(entries) > 1:
