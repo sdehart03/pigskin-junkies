@@ -828,6 +828,16 @@ def tiebreaker_value(pick, position):
     return pick[f"tiebreaker_{position}"]
 
 
+def effective_tiebreaker_value(game, pick, position):
+    """Use a submitted total or default a missing tiebreaker to one at kickoff."""
+    submitted_value = tiebreaker_value(pick, position)
+    if submitted_value not in (None, ""):
+        return int(submitted_value), False
+    if has_game_started(game):
+        return 1, True
+    return None, False
+
+
 def normalized_tiebreaker_text(value):
     return re.sub(r"[^a-z0-9]", "", (value or "").lower())
 
@@ -942,11 +952,17 @@ def compute_week_results(conn, week_id):
                 and selected_team == game["winner"]
             ):
                 wins += 1
-        tiebreaker_gaps = tuple(
-            abs((game["score_away"] + game["score_home"]) - int(pick[f"tiebreaker_{position}"] or 0))
-            if game and game["winner"] and pick else 9999
-            for position, game in ((position, tiebreaker_games.get(position)) for position in range(1, 4))
-        )
+        tiebreaker_values = []
+        tiebreaker_gaps = []
+        for position in range(1, 4):
+            game = tiebreaker_games.get(position)
+            value, _ = effective_tiebreaker_value(game, pick, position) if game else (None, False)
+            tiebreaker_values.append(value)
+            tiebreaker_gaps.append(
+                abs((game["score_away"] + game["score_home"]) - value)
+                if game and game["winner"] and value is not None else 9999
+            )
+        tiebreaker_gaps = tuple(tiebreaker_gaps)
         results.append(
             {
                 "entry_id": entry["id"],
@@ -957,7 +973,7 @@ def compute_week_results(conn, week_id):
                 "total_games": len(games),
                 "tb_gap": tiebreaker_gaps[0],
                 "tb_gaps": tiebreaker_gaps,
-                "tiebreaker_values": tuple(pick[f"tiebreaker_{position}"] if pick else None for position in range(1, 4)),
+                "tiebreaker_values": tuple(tiebreaker_values),
                 "submitted_at": pick["submitted_at"] if pick else None,
             }
         )
@@ -1863,7 +1879,9 @@ def render_picks(conn, account, message="", active_entry_id=None):
         if game["tiebreaker_position"]:
             position = game["tiebreaker_position"]
             if game_locked:
-                tiebreaker_field = f'<div class="tiebreaker-game-value"><span>Tiebreaker {position} total points</span><strong>{esc(tiebreaker_value(pick, position) or "No guess submitted")}</strong></div>'
+                value, defaulted = effective_tiebreaker_value(game, pick, position)
+                tiebreaker_display = f"{value} (default)" if defaulted else (value if value is not None else "No guess submitted")
+                tiebreaker_field = f'<div class="tiebreaker-game-value"><span>Tiebreaker {position} total points</span><strong>{esc(tiebreaker_display)}</strong></div>'
             else:
                 tiebreaker_field = f'<label class="tiebreaker-game-field">Tiebreaker {position}: total points<input type="number" min="0" name="tb_{position}" value="{esc(tiebreaker_value(pick, position))}" data-tiebreaker-game="{game["id"]}" data-tiebreaker-position="{position}" required /></label>'
         options = []
@@ -2239,7 +2257,9 @@ def render_player(conn, account, entry_id, week_id):
         game = tiebreaker_games.get(position)
         if not game:
             continue
-        value = tiebreaker_value(pick, position) if has_game_started(game) else "Hidden until kickoff"
+        value, defaulted = effective_tiebreaker_value(game, pick, position) if has_game_started(game) else ("Hidden until kickoff", False)
+        if defaulted:
+            value = f"{value} (default)"
         tiebreaker_cards.append(
             f'<div class="summary-card"><strong>Tiebreaker {position}: {esc(matchup_name(game))}</strong><span>{esc(value or "-")}</span></div>'
         )
