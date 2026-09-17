@@ -675,6 +675,30 @@ def matchup_name(game):
     return f"{ranked_team_name(game, 'away')} at {ranked_team_name(game, 'home')}"
 
 
+def pick_card_matchup_name(game):
+    """Show a game's line beside its favored team for quicker pick-card scanning."""
+    favorite_side, spread = line_values(game["spread_text"], game["away_team"], game["home_team"])
+    away_name = ranked_team_name(game, "away")
+    home_name = ranked_team_name(game, "home")
+    if favorite_side == "away":
+        away_name = f"{away_name} -{spread}"
+    elif favorite_side == "home":
+        home_name = f"{home_name} -{spread}"
+    elif game["spread_text"] == "Pick 'em":
+        home_name = f"{home_name} (Pick 'em)"
+    return f"{away_name} at {home_name}"
+
+
+def pick_card_meta(game):
+    """Keep pick cards focused on the kickoff details after the line moves into the heading."""
+    kickoff = game["kickoff"]
+    try:
+        kickoff = datetime.fromisoformat(kickoff).strftime("%a %b %-d %-I:%M %p")
+    except ValueError:
+        pass
+    return " | ".join(part for part in (kickoff, game["site_note"]) if part)
+
+
 def ranked_selection_name(game, selected_team):
     if selected_team == game["away_team"]:
         return ranked_team_name(game, "away")
@@ -1709,7 +1733,7 @@ def render_commissioner_picks(conn, account, week_id=None, entry_id=None, messag
             if game["tiebreaker_position"] else ""
         )
         cards.append(
-            f'<fieldset class="pick-game-card"><legend>{esc(game["code"])}: {esc(matchup_name(game))}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{options}</div>{tiebreaker_field}</fieldset>'
+            f'<fieldset class="pick-game-card"><legend>{esc(game["code"])}: {esc(pick_card_matchup_name(game))}</legend><div class="pick-game-card__meta">{esc(pick_card_meta(game))}</div><div class="pick-options">{options}</div>{tiebreaker_field}</fieldset>'
         )
     notice = f'<div class="alert alert--success">{esc(message)}</div>' if message else ""
     body = f"""
@@ -1868,7 +1892,7 @@ def render_picks(conn, account, message="", active_entry_id=None):
                     f'<label class="pick-option"><input type="radio" name="pick_{game["id"]}" value="{esc(team)}" {checked} /><span>{esc(ranked_team_name(game, side))}</span></label>'
                 )
         cards.append(
-            f'<fieldset class="pick-game-card {"pick-game-card--locked" if game_locked else ""}"><legend>{esc(game["code"])}: {esc(matchup_name(game))}</legend><div class="pick-game-card__meta">{esc(game_meta(game))}</div><div class="pick-options">{"".join(options)}</div>{tiebreaker_field}</fieldset>'
+            f'<fieldset class="pick-game-card {"pick-game-card--locked" if game_locked else ""}"><legend>{esc(game["code"])}: {esc(pick_card_matchup_name(game))}</legend><div class="pick-game-card__meta">{esc(pick_card_meta(game))}</div><div class="pick-options">{"".join(options)}</div>{tiebreaker_field}</fieldset>'
         )
     entry_select = ""
     if len(entries) > 1:
