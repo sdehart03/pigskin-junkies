@@ -1214,6 +1214,41 @@ tbody tr:last-child td {
   margin-top: 24px;
 }
 
+.bulk-game-count {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.bulk-game-count label {
+  width: min(100%, 13rem);
+}
+
+.bulk-game-count select {
+  width: 100%;
+}
+
+.bulk-game-form {
+  display: grid;
+  gap: 20px;
+}
+
+.bulk-game-card {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.bulk-game-card legend {
+  padding: 0 8px;
+  color: var(--accent);
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+}
+
 .game-editor-hero { align-items: flex-end; }
 .game-editor-hero .hero__lede { margin-bottom: 0; }
 .game-editor-panel { width: min(100%, 880px); margin: 0 auto; padding: clamp(20px, 4vw, 38px); }
@@ -1511,6 +1546,11 @@ tbody tr:last-child td {
   .commissioner-pick-banner { flex-direction: column; }
   .commissioner-pick-banner .callout { max-width: none; }
   .game-builder-grid .pick-actions { align-items: stretch; }
+
+  .bulk-game-count { align-items: stretch; flex-direction: column; }
+  .bulk-game-count label { width: 100%; }
+  .bulk-game-count .button { width: 100%; }
+  .bulk-game-card { padding: 14px; }
 
   .week-switcher {
     display: grid;
