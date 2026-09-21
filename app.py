@@ -730,27 +730,6 @@ def line_values(spread_text, away_team, home_team):
     return "none", ""
 
 
-def default_underdog_pick(game):
-    """Return the underdog after kickoff, with the away team as the pick'em fallback."""
-    if not has_game_started(game):
-        return None
-    favorite_side, _ = line_values(game["spread_text"], game["away_team"], game["home_team"])
-    if favorite_side == "away":
-        return game["home_team"]
-    if favorite_side == "home":
-        return game["away_team"]
-    return game["away_team"]
-
-
-def effective_pick(game, selections):
-    """Use a submitted pick when present; otherwise default a started spread game to its underdog."""
-    selected_team = selections.get(game["id"])
-    if selected_team:
-        return selected_team, False
-    default_pick = default_underdog_pick(game)
-    return default_pick, bool(default_pick)
-
-
 def ats_winner_for_score(game, score_away, score_home):
     """Return the team that covered the spread, or None for an unfinished game/push."""
     if score_away == 0 and score_home == 0:
@@ -828,14 +807,12 @@ def tiebreaker_value(pick, position):
     return pick[f"tiebreaker_{position}"]
 
 
-def effective_tiebreaker_value(game, pick, position):
-    """Use a submitted total or default a missing tiebreaker to one at kickoff."""
+def submitted_tiebreaker_value(pick, position):
+    """Return a submitted tiebreaker total; blank guesses stay blank."""
     submitted_value = tiebreaker_value(pick, position)
     if submitted_value not in (None, ""):
-        return int(submitted_value), False
-    if has_game_started(game):
-        return 1, True
-    return None, False
+        return int(submitted_value)
+    return None
 
 
 def normalized_tiebreaker_text(value):
@@ -941,11 +918,10 @@ def compute_week_results(conn, week_id):
     for entry in entries:
         pick = picks_by_entry.get(entry["id"])
         entry_selections = selections.get(entry["id"], {})
-        # Score submitted selections or the automatic underdog default once a
-        # game starts. Completion remains based only on participant submissions.
+        # Only submitted selections can earn points; blank picks are misses.
         wins = 0
         for game in games:
-            selected_team, _ = effective_pick(game, entry_selections)
+            selected_team = entry_selections.get(game["id"])
             if (
                 has_game_started(game)
                 and game["winner"]
@@ -956,7 +932,7 @@ def compute_week_results(conn, week_id):
         tiebreaker_gaps = []
         for position in range(1, 4):
             game = tiebreaker_games.get(position)
-            value, _ = effective_tiebreaker_value(game, pick, position) if game else (None, False)
+            value = submitted_tiebreaker_value(pick, position) if game else None
             tiebreaker_values.append(value)
             tiebreaker_gaps.append(
                 abs((game["score_away"] + game["score_home"]) - value)
@@ -1690,12 +1666,6 @@ def render_commissioner_pick_tracker(conn, account, week_id=None):
                     f'<td class="pick-tracker__pick pick-tracker__pick--submitted" title="Picked {esc(selected_team)}"><strong>{esc(ranked_selection_name(game, selected_team))}</strong><span>Picked</span></td>'
                 )
                 continue
-            default_pick = default_underdog_pick(game)
-            if default_pick:
-                pick_cells.append(
-                    f'<td class="pick-tracker__pick pick-tracker__pick--default" title="No pick submitted; defaulted at kickoff"><strong>{esc(ranked_selection_name(game, default_pick))}</strong><span>Auto default</span></td>'
-                )
-                continue
             pick_cells.append('<td class="pick-tracker__pick pick-tracker__pick--missing"><strong>Missing</strong><span>No pick</span></td>')
         tracker_rows.append(
             f'''<tr>
@@ -1718,7 +1688,7 @@ def render_commissioner_pick_tracker(conn, account, week_id=None):
       <form class="week-switcher" method="get" action="/commissioner/tracker">
         <label>Week<select name="week_id">{''.join(f'<option value="{listed_week["id"]}" {"selected" if listed_week["id"] == week["id"] else ""}>{esc(listed_week["label"])}</option>' for listed_week in fetch_all_weeks(conn))}</select></label>
         <button class="button button--primary button--small" type="submit">Open week</button>
-        <span>Swipe or scroll the table to review every game. Blank picks default at kickoff: underdog for spread games, away team for pick'em games.</span>
+        <span>Swipe or scroll the table to review every game. Blank selections remain missing picks and do not earn points.</span>
       </form>
       <section class="panel">
         <div class="section-heading"><div><p class="section-label">{esc(week["label"])}</p><h2>All participant picks</h2></div><span class="badge">Commissioners only</span></div>
@@ -1888,20 +1858,15 @@ def render_picks(conn, account, message="", active_entry_id=None):
         if game["tiebreaker_position"]:
             position = game["tiebreaker_position"]
             if game_locked:
-                value, defaulted = effective_tiebreaker_value(game, pick, position)
-                tiebreaker_display = f"{value} (default)" if defaulted else (value if value is not None else "No guess submitted")
+                value = submitted_tiebreaker_value(pick, position)
+                tiebreaker_display = value if value is not None else "No guess submitted"
                 tiebreaker_field = f'<div class="tiebreaker-game-value"><span>Tiebreaker {position} total points</span><strong>{esc(tiebreaker_display)}</strong></div>'
             else:
                 tiebreaker_field = f'<label class="tiebreaker-game-field">Tiebreaker {position}: total points<input type="number" min="0" name="tb_{position}" value="{esc(tiebreaker_value(pick, position))}" data-tiebreaker-game="{game["id"]}" data-tiebreaker-position="{position}" required /></label>'
         options = []
         if game_locked:
             locked_pick = selections.get(game["id"])
-            default_pick = default_underdog_pick(game) if not locked_pick else None
-            pick_notice = (
-                f'<strong>{esc(ranked_selection_name(game, default_pick))}</strong><span>No pick was submitted, so this game defaulted at kickoff.</span>'
-                if default_pick else
-                f'<strong>{esc(ranked_selection_name(game, locked_pick)) if locked_pick else "No pick submitted"}</strong><span>This game locked at {esc(game_lock_label(game))}.</span>'
-            )
+            pick_notice = f'<strong>{esc(ranked_selection_name(game, locked_pick)) if locked_pick else "No pick submitted"}</strong><span>This game locked at {esc(game_lock_label(game))}.</span>'
             options.append(
                 f'<div class="pick-lock-notice">{pick_notice}</div>'
             )
@@ -2132,7 +2097,7 @@ def render_all_picks(conn, account, week_id=None):
             if not has_game_started(game):
                 pick, result_class = "Private", "pick-result--private"
             else:
-                selected_team, defaulted = effective_pick(game, selections)
+                selected_team = selections.get(game["id"])
                 pick = ranked_selection_name(game, selected_team) if selected_team else "-"
                 if not game["winner"]:
                     result_class = "pick-result--pending"
@@ -2142,8 +2107,6 @@ def render_all_picks(conn, account, week_id=None):
                     result_class = "pick-result--correct"
                 else:
                     result_class = "pick-result--incorrect"
-                if defaulted and pick != "-":
-                    pick = f"{pick} (default)"
             game_cells.append(f'<td class="pick-result {result_class}">{esc(pick)}</td>')
         pick_rows.append(
             "<tr>"
@@ -2163,7 +2126,7 @@ def render_all_picks(conn, account, week_id=None):
       </section>
       <section class="panel">
         <div class="section-heading"><div><p class="section-label">Full field</p><h2>All participant picks</h2></div><span class="badge">{len(results)} entries</span></div>
-        <div class="callout">Each game column unlocks at its own kickoff. Until then, every selection remains private. Blank picks default at kickoff: underdog for spread games, away team for pick'em games. Scroll or swipe the table left and right to see every game.</div>
+        <div class="callout">Each game column unlocks at its own kickoff. Until then, every selection remains private. Blank picks remain misses and do not earn points. Scroll or swipe the table left and right to see every game.</div>
         <div class="table-wrap full-picks-table" style="width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden;"><table><thead><tr><th>Rank</th><th>Entry</th>{game_headers}<th>Weekly total</th></tr></thead><tbody>{''.join(pick_rows)}</tbody></table></div>
       </section>
     """
@@ -2177,7 +2140,7 @@ def render_trends(conn, account):
     for result in compute_week_results(conn, week["id"]):
         _, selections = fetch_pick_bundle(conn, week["id"], result["entry_id"])
         for game in games:
-            selected_team, _ = effective_pick(game, selections)
+            selected_team = selections.get(game["id"])
             if selected_team:
                 counts = grouped[game["id"]]["counts"]
                 counts[selected_team] = counts.get(selected_team, 0) + 1
@@ -2245,13 +2208,11 @@ def render_player(conn, account, entry_id, week_id):
     mobile_rows = []
     for game in games:
         visible = has_game_started(game)
-        selected_team, defaulted = effective_pick(game, selections) if visible else (None, False)
+        selected_team = selections.get(game["id"]) if visible else None
         selected = ranked_selection_name(game, selected_team) if visible and selected_team else ("-" if visible else "Hidden until kickoff")
-        if defaulted:
-            selected = f"{selected} (default)"
         winner = game["winner"] if visible else "Hidden until kickoff"
         correct = visible and selected_team == game["winner"]
-        status = "Hidden" if not visible else ("No pick" if not selected_team else ("Default correct" if correct and defaulted else ("Correct" if correct else ("Default miss" if defaulted else "Miss"))))
+        status = "Hidden" if not visible else ("No pick" if not selected_team else ("Correct" if correct else "Miss"))
         status_class = "status--good" if correct else "status--warn"
         rows.append(
             "<tr>"
@@ -2275,9 +2236,7 @@ def render_player(conn, account, entry_id, week_id):
         game = tiebreaker_games.get(position)
         if not game:
             continue
-        value, defaulted = effective_tiebreaker_value(game, pick, position) if has_game_started(game) else ("Hidden until kickoff", False)
-        if defaulted:
-            value = f"{value} (default)"
+        value = submitted_tiebreaker_value(pick, position) if has_game_started(game) else "Hidden until kickoff"
         tiebreaker_cards.append(
             f'<div class="summary-card"><strong>Tiebreaker {position}: {esc(matchup_name(game))}</strong><span>{esc(value or "-")}</span></div>'
         )
