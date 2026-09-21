@@ -581,6 +581,15 @@ def commissioner_week_url(form):
     return f"/commissioner/weekly?week_id={urllib.parse.quote(str(week))}" if fetch_week_id(week) else "/commissioner/weekly"
 
 
+def bulk_game_count_from_value(value):
+    """Keep the bulk builder practical while allowing a full weekly slate."""
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return 1
+    return min(25, max(1, count))
+
+
 def fetch_week_id(value):
     try:
         return int(value)
@@ -850,9 +859,9 @@ def set_game_tiebreaker_position(conn, week_id, game_id, position):
     conn.execute("UPDATE games SET tiebreaker_position = ? WHERE id = ?", (position, game_id))
 
 
-def tiebreaker_position_from_form(form):
+def tiebreaker_position_from_form(form, field_name="tiebreaker_position"):
     try:
-        position = int(form.get("tiebreaker_position") or 0)
+        position = int(form.get(field_name) or 0)
     except ValueError:
         return 0
     return position if position in {0, 1, 2, 3} else 0
@@ -1068,7 +1077,7 @@ def render_layout(title, body, active, account):
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260905-pick-results" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260920-bulk-builder" />
   </head>
   <body>
     <div class="site-shell">
@@ -1307,7 +1316,7 @@ def render_delete_game_confirmation(account, game):
     return render_layout("Pigskin Junkies | Confirm Game Deletion", body, "/commissioner", account)
 
 
-def render_commissioner(conn, account, section="dashboard", week_id=None):
+def render_commissioner(conn, account, section="dashboard", week_id=None, bulk_game_count=1):
     if not account:
         return None, redirect  # sentinel handled by caller
     if not account["is_commissioner"]:
@@ -1323,6 +1332,7 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
         return render_layout("Pigskin Junkies | Commissioner", body, "/commissioner", account), None
 
     week = fetch_week(conn, week_id) or fetch_current_week(conn)
+    bulk_game_count = bulk_game_count_from_value(bulk_game_count)
     games = fetch_week_games(conn, week["id"])
     results = compute_week_results(conn, week["id"])
     accounts_with_entries = fetch_accounts_with_entries(conn)
@@ -1447,6 +1457,28 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
     team_datalist = '<datalist id="ncaa-team-options">' + ''.join(
         f'<option value="{esc(team)}"></option>' for team in NCAA_TEAMS
     ) + "</datalist>"
+    bulk_game_count_options = "".join(
+        f'<option value="{count}" {"selected" if count == bulk_game_count else ""}>{count}</option>'
+        for count in range(1, 26)
+    )
+    bulk_game_cards = "".join(
+        f'''
+          <fieldset class="bulk-game-card">
+            <legend>Game {next_game_number + index - 1:02d}</legend>
+            <div class="game-builder-grid">
+              <label>Away team<input list="ncaa-team-options" name="game_{index}_away_team" placeholder="Start typing a team" required /></label>
+              <label>Away rank<select name="game_{index}_away_rank">{poll_rank_options()}</select></label>
+              <label>Home team<input list="ncaa-team-options" name="game_{index}_home_team" placeholder="Start typing a team" required /></label>
+              <label>Home rank<select name="game_{index}_home_rank">{poll_rank_options()}</select></label>
+              <label>Kickoff<input type="datetime-local" name="game_{index}_kickoff" required /></label>
+              <label>Location or note<input type="text" name="game_{index}_site_note" placeholder="Example: Atlanta, GA or neutral site" /></label>
+              <label>Favorite<select name="game_{index}_favorite_side"><option value="away">Away team</option><option value="home" selected>Home team</option><option value="none">Pick 'em</option></select></label>
+              <label>Favorite by<input type="number" inputmode="decimal" min="0" step="0.5" name="game_{index}_spread" placeholder="Example: 3.5" /></label>
+              <label>Tiebreaker<select name="game_{index}_tiebreaker_position"><option value="0" selected>Not a tiebreaker</option><option value="1">Tiebreaker 1</option><option value="2">Tiebreaker 2</option><option value="3">Tiebreaker 3</option></select></label>
+            </div>
+          </fieldset>'''
+        for index in range(1, bulk_game_count + 1)
+    )
     weekly_section = f"""
       <section class="dashboard-grid commissioner-weekly-grid">
         <article class="panel">
@@ -1472,23 +1504,19 @@ def render_commissioner(conn, account, section="dashboard", week_id=None):
         </article>
       </section>
       <section class="panel game-builder-panel">
-        <div class="section-heading"><div><p class="section-label">Game builder</p><h2>Add a matchup to {esc(week['label'])}</h2></div><span class="badge">Next: Game {next_game_number:02d}</span></div>
-        <div class="callout">Choose from the NCAA team suggestions or type any custom team name. The favorite and spread become the exact text participants see on their pick card.</div>
+        <div class="section-heading"><div><p class="section-label">Game builder</p><h2>Build matchups for {esc(week['label'])}</h2></div><span class="badge">Next: Game {next_game_number:02d}</span></div>
+        <div class="callout">Choose how many games to enter, then save the complete slate at once. Choose from the NCAA team suggestions or type any custom team name.</div>
         {team_datalist}
-        <form class="form-card game-builder-grid" method="post" action="/commissioner/game/add">
+        <form class="bulk-game-count" method="get" action="/commissioner/weekly">
           <input type="hidden" name="week_id" value="{week['id']}" />
-          <label>Away team<input list="ncaa-team-options" name="away_team" placeholder="Start typing a team" required /></label>
-          <label>Away rank<select name="away_rank">{poll_rank_options()}</select></label>
-          <label>Home team<input list="ncaa-team-options" name="home_team" placeholder="Start typing a team" required /></label>
-          <label>Home rank<select name="home_rank">{poll_rank_options()}</select></label>
-          <label>Kickoff<input type="datetime-local" name="kickoff" required /></label>
-          <label>Location or note<input type="text" name="site_note" placeholder="Example: Atlanta, GA or neutral site" /></label>
-          <label>Favorite
-            <select name="favorite_side"><option value="away">Away team</option><option value="home" selected>Home team</option><option value="none">Pick 'em</option></select>
-          </label>
-          <label>Favorite by<input type="number" inputmode="decimal" min="0" step="0.5" name="spread" placeholder="Example: 3.5" /></label>
-          <label>Tiebreaker<select name="tiebreaker_position"><option value="0" selected>Not a tiebreaker</option><option value="1">Tiebreaker 1</option><option value="2">Tiebreaker 2</option><option value="3">Tiebreaker 3</option></select></label>
-          <div class="pick-actions"><button class="button button--primary" type="submit">Add Game {next_game_number:02d}</button></div>
+          <label>Games to add now<select name="bulk_game_count">{bulk_game_count_options}</select></label>
+          <button class="button button--ghost button--small" type="submit">Build entry form</button>
+        </form>
+        <form class="form-card bulk-game-form" method="post" action="/commissioner/game/bulk-add">
+          <input type="hidden" name="week_id" value="{week['id']}" />
+          <input type="hidden" name="bulk_game_count" value="{bulk_game_count}" />
+          {bulk_game_cards}
+          <div class="pick-actions"><button class="button button--primary" type="submit">Add {bulk_game_count} game{"s" if bulk_game_count != 1 else ""} to {esc(week['label'])}</button></div>
         </form>
       </section>
     """
@@ -2506,23 +2534,24 @@ def delete_game(conn, game_id):
     return game["week_id"]
 
 
-def add_game(conn, form):
-    week = form_week(conn, form)
-    away_team = (form.get("away_team") or "").strip()
-    home_team = (form.get("home_team") or "").strip()
-    away_rank = poll_rank_from_form(form, "away_rank")
-    home_rank = poll_rank_from_form(form, "home_rank")
-    kickoff = (form.get("kickoff") or "").strip()
-    site_note = (form.get("site_note") or "").strip()
-    favorite_side = form.get("favorite_side") or "none"
-    spread_raw = (form.get("spread") or "").strip()
-    tiebreaker_position = tiebreaker_position_from_form(form)
-    if not week or not all([away_team, home_team, kickoff]) or away_team.lower() == home_team.lower():
-        return False
+def game_values_from_form(form, prefix=""):
+    """Validate one game section from either the single or bulk builder."""
+    field = lambda name: f"{prefix}{name}"
+    away_team = (form.get(field("away_team")) or "").strip()
+    home_team = (form.get(field("home_team")) or "").strip()
+    away_rank = poll_rank_from_form(form, field("away_rank"))
+    home_rank = poll_rank_from_form(form, field("home_rank"))
+    kickoff = (form.get(field("kickoff")) or "").strip()
+    site_note = (form.get(field("site_note")) or "").strip()
+    favorite_side = form.get(field("favorite_side")) or "none"
+    spread_raw = (form.get(field("spread")) or "").strip()
+    tiebreaker_position = tiebreaker_position_from_form(form, field("tiebreaker_position"))
+    if not all([away_team, home_team, kickoff]) or away_team.lower() == home_team.lower():
+        return None
     try:
         spread = abs(float(spread_raw)) if spread_raw else 0
     except ValueError:
-        return False
+        return None
     if favorite_side == "away":
         favorite = away_team
     elif favorite_side == "home":
@@ -2530,15 +2559,61 @@ def add_game(conn, form):
     else:
         favorite = ""
     spread_text = f"{favorite} -{spread:g}" if favorite and spread else "Pick 'em"
-    game_count = conn.execute("SELECT COUNT(*) AS count FROM games WHERE week_id = ?", (week["id"],)).fetchone()["count"]
+    return {
+        "away_team": away_team,
+        "home_team": home_team,
+        "away_rank": away_rank,
+        "home_rank": home_rank,
+        "kickoff": kickoff,
+        "site_note": site_note,
+        "spread_text": spread_text,
+        "tiebreaker_position": tiebreaker_position,
+    }
+
+
+def insert_game(conn, week_id, game_number, values):
     game_id = conn.execute(
         """
         INSERT INTO games (week_id, code, away_team, home_team, away_rank, home_rank, kickoff, site_note, spread_text, display_order, winner, score_away, score_home)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, 0)
         """,
-        (week["id"], f"Game {game_count + 1:02d}", away_team, home_team, away_rank, home_rank, kickoff, site_note, spread_text, game_count + 1),
+        (
+            week_id,
+            f"Game {game_number:02d}",
+            values["away_team"],
+            values["home_team"],
+            values["away_rank"],
+            values["home_rank"],
+            values["kickoff"],
+            values["site_note"],
+            values["spread_text"],
+            game_number,
+        ),
     ).lastrowid
-    set_game_tiebreaker_position(conn, week["id"], game_id, tiebreaker_position)
+    set_game_tiebreaker_position(conn, week_id, game_id, values["tiebreaker_position"])
+
+
+def add_game(conn, form):
+    week = form_week(conn, form)
+    values = game_values_from_form(form)
+    if not week or not values:
+        return False
+    game_count = conn.execute("SELECT COUNT(*) AS count FROM games WHERE week_id = ?", (week["id"],)).fetchone()["count"]
+    insert_game(conn, week["id"], game_count + 1, values)
+    conn.commit()
+    return True
+
+
+def add_bulk_games(conn, form):
+    """Create a completed multi-game card in one transaction."""
+    week = form_week(conn, form)
+    count = bulk_game_count_from_value(form.get("bulk_game_count"))
+    values = [game_values_from_form(form, f"game_{index}_") for index in range(1, count + 1)]
+    if not week or any(item is None for item in values):
+        return False
+    game_count = conn.execute("SELECT COUNT(*) AS count FROM games WHERE week_id = ?", (week["id"],)).fetchone()["count"]
+    for index, game_values in enumerate(values, start=1):
+        insert_game(conn, week["id"], game_count + index, game_values)
     conn.commit()
     return True
 
@@ -2921,7 +2996,13 @@ def app(environ, start_response):
             conn.close()
             return redirect(start_response, "/login?next=commissioner")
         section = path.rsplit("/", 1)[-1]
-        body, sentinel = render_commissioner(conn, account, section=section, week_id=query.get("week_id", [None])[0])
+        body, sentinel = render_commissioner(
+            conn,
+            account,
+            section=section,
+            week_id=query.get("week_id", [None])[0],
+            bulk_game_count=query.get("bulk_game_count", [1])[0],
+        )
         conn.close()
         return html_response(start_response, body)
 
@@ -2946,6 +3027,18 @@ def app(environ, start_response):
             return redirect(start_response, "/picks")
         form = read_post_data(environ)
         add_game(conn, form)
+        conn.close()
+        return redirect(start_response, commissioner_week_url(form))
+
+    if path == "/commissioner/game/bulk-add" and method == "POST":
+        if not account:
+            conn.close()
+            return redirect(start_response, "/login?next=commissioner")
+        if not account["is_commissioner"]:
+            conn.close()
+            return redirect(start_response, "/picks")
+        form = read_post_data(environ)
+        add_bulk_games(conn, form)
         conn.close()
         return redirect(start_response, commissioner_week_url(form))
 
